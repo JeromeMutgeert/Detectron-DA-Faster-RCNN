@@ -98,11 +98,22 @@ def _get_image_blob(roidb):
     processed_ims = []
     im_scales = []
     for i in range(num_images):
-        im = cv2.imread(roidb[i]['image'])
+        roi = roidb[i]
+        im = cv2.imread(roi['image'])
         assert im is not None, \
-            'Failed to read image \'{}\''.format(roidb[i]['image'])
-        if roidb[i]['flipped']:
+            'Failed to read image \'{}\''.format(roi['image'])
+        if roi['flipped']:
             im = im[:, ::-1, :]
+        
+        # added by Jerome
+        h,w,_ = im.shape
+        roi['width'] = w
+        roi['height'] = h
+        boxes = roi['boxes']
+        # will be only true for live_targets:
+        if len(boxes) == 1 and (boxes[0] == np.array([0.,0.,0.,0.],dtype=np.float32)).all():
+            roi['boxes'] = np.array([[w*.2,h*.2,w*.8,h*.8]],dtype=np.float32)  # to make sure enough (one or more) anchors are retained
+        
         target_size = cfg.TRAIN.SCALES[scale_inds[i]]
         im, im_scale = blob_utils.prep_im_for_blob(
             im, cfg.PIXEL_MEANS, target_size, cfg.TRAIN.MAX_SIZE

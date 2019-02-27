@@ -60,6 +60,7 @@ def train_model():
     CHECKPOINT_PERIOD = int(cfg.TRAIN.SNAPSHOT_ITERS / cfg.NUM_GPUS)
 
     for cur_iter in range(start_iter, cfg.SOLVER.MAX_ITER):
+        # print('iter:',cur_iter)
         if model.roi_data_loader.has_stopped():
             handle_critical_error(model, 'roi_data_loader failed')
         training_stats.IterTic()
@@ -185,7 +186,8 @@ def setup_model_for_training(model, weights_file, output_dir):
 
     # Start loading mini-batches and enqueuing blobs
     model.roi_data_loader.register_sigint_handler()
-    model.roi_data_loader.start(prefill=True)
+    # Jerome: TODO: set back to True:
+    model.roi_data_loader.start(prefill=False)
     return output_dir
 
 

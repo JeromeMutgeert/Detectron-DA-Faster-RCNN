@@ -1,0 +1,7 @@
+ids_*.txt
+log.txt
+read.txt
+fetched.txt
+
+*_ids.txt
+filter*

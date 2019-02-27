@@ -79,6 +79,9 @@ __C.TRAIN.TARGET_DATASETS = ()
 __C.TRAIN.SOURCE_PROPOSAL_FILES = ()
 __C.TRAIN.TARGET_PROPOSAL_FILES = ()
 
+# added by Jerome, to support the TargetDataLoaderProcess:
+__C.TRAIN.LIVE_DATASET = False
+
 # Initialize network with weights from this .pkl file
 __C.TRAIN.WEIGHTS = ''
 
@@ -1086,6 +1089,13 @@ def assert_and_infer_cfg(cache_urls=True, make_immutable=True):
         __C.RPN.RPN_ON = True
     if __C.RPN.RPN_ON or __C.RETINANET.RETINANET_ON:
         __C.TEST.PRECOMPUTED_PROPOSALS = False
+    
+    # Added by Jerome, to support the TargetDataLoaderProcess:
+    if __C.TRAIN.TARGET_DATASETS[0] == 'live_targets':
+        __C.TRAIN.LIVE_DATASET = True
+    if __C.TRAIN.LIVE_DATASET:
+        __C.TRAIN.ASPECT_GROUPING = False
+        
     if cache_urls:
         cache_cfg_urls()
     if make_immutable:

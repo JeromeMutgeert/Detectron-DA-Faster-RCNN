@@ -30,6 +30,9 @@ import detectron.utils.boxes as box_utils
 import detectron.utils.keypoints as keypoint_utils
 import detectron.utils.segms as segm_utils
 
+from detectron.datasets.live_dataset import LiveRoidb
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,6 +41,13 @@ def combined_roidb_for_training(dataset_names, proposal_files, is_source=True):
     object proposals. The roidb entries are then prepared for use in training,
     which involves caching certain types of metadata for each roidb entry.
     """
+    if  dataset_names[0] == 'live_targets':
+        roidb = LiveRoidb()
+        if not cfg.TRAIN.USE_FLIPPED:
+            logger.info('Live target data set will use flipped examples anyway!')
+        logger.info('"Loaded" dataset: {:s}'.format('live_targets'))
+        return roidb
+    
     def get_roidb(dataset_name, proposal_file, is_source=True):
         ds = JsonDataset(dataset_name)
         roidb = ds.get_roidb(
@@ -49,7 +59,7 @@ def combined_roidb_for_training(dataset_names, proposal_files, is_source=True):
         if cfg.TRAIN.USE_FLIPPED:
             logger.info('Appending horizontally-flipped training examples...')
             extend_with_flipped_entries(roidb, ds)
-        logger.info('Loaded dataset: {:s}'.format(ds.name))
+        logger.info('Loaded dataset: {:s}'.format(dataset_name))
         return roidb
 
     if isinstance(dataset_names, basestring):
