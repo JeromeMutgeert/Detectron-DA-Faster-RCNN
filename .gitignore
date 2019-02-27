@@ -31,7 +31,7 @@ detectron/utils/cython_*.c
 *.out
 
 # Test data
-test/
+# test/
 
 
 # Pycharm will be covered by this:
