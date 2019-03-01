@@ -317,27 +317,53 @@ def _add_instance_level_classifier(model, blob_in, dim_in):
 
 
 def _add_consistency_loss(model, blob_img_in, img_dim_in, blob_ins_in, ins_dim_in):
+    # TODO Test fix:
+    # DONE Jerome: FIX: batch index required. This would fix both <256 rois and alllow for 4 imgs per batch.
+    # Fix instatiated by replacing the ins_probs input by the rois input, containing the batch indices.
     def expand_as(inputs, outputs):
         img_prob = inputs[0].data
-        ins_prob = inputs[1].data
+        rois = inputs[1].data
         import numpy as np
         mean_da_conv = np.mean(img_prob, (1,2,3))
-        repeated_da_conv = np.expand_dims(np.repeat(
-            mean_da_conv, ins_prob.shape[0]//2), axis=1)
+        # repeated_da_conv = np.expand_dims(np.repeat(
+        #     mean_da_conv, ins_prob.shape[0]//2), axis=1)
+        repeated_da_conv = np.expand_dims(mean_da_conv[rois[:,0].astype(np.int32)], axis=1) # works like a charm.
         outputs[0].feed(repeated_da_conv)
+        
     def grad_expand_as(inputs, outputs):
         import numpy as np
         img_prob = inputs[0].data
-        ins_prob = inputs[1].data
+        rois = inputs[1].data
         grad_output = inputs[3]
         grad_input = outputs[0]
-        grad_input.reshape(inputs[0].shape)
-        unit = grad_output.shape[0]//2
+        
         grad_o = grad_output.data[...]
-        grad_i = np.zeros(inputs[0].shape)
-        for i in range(inputs[0].shape[0]):
-            grad_i[i] = np.sum(grad_o[i*unit:(i+1)*unit, 0])*np.ones(grad_i[i].shape).astype(np.float32)/(img_prob.shape[1]*img_prob.shape[2]*img_prob.shape[3])
+        # sums = np.zeros(img_prob.shape[0],dtype=np.float32)
+        # for b_idx,g_o in zip(rois[:,0],grad_o[:,0]):
+            # sums[b_idx] += g_o
+        # probably faster:
+        sums = np.bincount(rois[:,0].astype(np.int32),grad_o[:,0]).astype(np.float32)
+        g_is = sums/(img_prob.shape[1]*img_prob.shape[2]*img_prob.shape[3])
+        
+        grad_i = np.empty(img_prob.shape,dtype=np.float32)
+        for b in range(img_prob.shape[0]):
+            grad_i[b,...] = g_is[b]
+        
+        grad_input.reshape(img_prob.shape)
         grad_input.data[...] = grad_i
+        
+        # old code:
+        # grad_input.reshape(inputs[0].shape)
+        # unit = grad_output.shape[0]//2
+        # grad_o = grad_output.data[...]
+        # grad_i = np.zeros(inputs[0].shape)
+        # sums = np.zeros(img_prob.shape[0],dtype=np.float32)
+        # for b_idx in zip(rois[:,1],grad_o):
+        #     sums[b_idx] += grad_o
+        #
+        # for im in range(inputs[0].shape[0]):
+        #     grad_i[b] = np.sum(grad_o[b*unit:(b+1)*unit, 0])*np.full(grad_i[b].shape,val,dtype=np.float32)
+        # grad_input.data[...] = grad_i
     
     model.GradientScalerLayer([blob_img_in], ['da_grl_copy'], 1.0*cfg.TRAIN.DA_IMG_GRL_WEIGHT)
     model.ConvShared('da_grl_copy', 'da_conv_1_copy', img_dim_in, 512, kernel=1, pad=0, stride=1, weight='da_conv_1_w', bias='da_conv_1_b')
@@ -360,7 +386,7 @@ def _add_consistency_loss(model, blob_img_in, img_dim_in, blob_ins_in, ins_dim_i
     loss_gradient = None
     if model.train:
         model.net.Python(f=expand_as, grad_f=grad_expand_as, grad_input_indices=[0], grad_output_indices=[0])(
-            ['img_probs', 'ins_probs'], ['repeated_img_probs'])
+            ['img_probs', 'rois'], ['repeated_img_probs'])
         dist = model.net.L1Distance(['repeated_img_probs', 'ins_probs'], ['consistency_dist'])
         # dist = model.net.SquaredL2Distance(['repeated_img_probs', 'ins_probs'], ['consistency_dist'])
         loss_consistency = model.net.AveragedLoss(dist, 'loss_consistency')

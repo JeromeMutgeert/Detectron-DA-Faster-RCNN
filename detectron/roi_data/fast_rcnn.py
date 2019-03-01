@@ -117,14 +117,14 @@ def add_fast_rcnn_blobs(blobs, im_scales, roidb):
     """Add blobs needed for training Fast R-CNN style models."""
     # Sample training RoIs from each image and append them to the blob lists
     
-    # by Jerome: make sure the roi batch is equally divisible by IMGS_PER_BATCH by decreasing the rois per img to
-    # the amount of the image in the batch with the least of them
-    min_rois_per_img = min(len(entry['gt_classes']) for entry in roidb)
-    if min_rois_per_img < int(cfg.TRAIN.BATCH_SIZE_PER_IM):
-        print('rois per img pruned to', min_rois_per_img)
+    # # by Jerome: make sure the roi batch is equally divisible by IMGS_PER_BATCH by decreasing the rois per img to
+    # # the amount of the image in the batch with the least of them
+    # min_rois_per_img = min(len(entry['gt_classes']) for entry in roidb)
+    # if min_rois_per_img < int(cfg.TRAIN.BATCH_SIZE_PER_IM):
+    #     print('rois per img pruned to', min_rois_per_img)
     
     for im_i, entry in enumerate(roidb):
-        frcn_blobs = _sample_rois(entry, im_scales[im_i], im_i, max_rois=min_rois_per_img)
+        frcn_blobs = _sample_rois(entry, im_scales[im_i], im_i)#, max_rois=min_rois_per_img)
         for k, v in frcn_blobs.items():
             blobs[k].append(v)
     # Concat the training blob lists into tensors
@@ -144,11 +144,12 @@ def add_fast_rcnn_blobs(blobs, im_scales, roidb):
     return valid
 
 
-def _sample_rois(roidb, im_scale, batch_idx, max_rois = int(cfg.TRAIN.BATCH_SIZE_PER_IM)):
+def _sample_rois(roidb, im_scale, batch_idx): #max_rois = int(cfg.TRAIN.BATCH_SIZE_PER_IM)):
     """Generate a random sample of RoIs comprising foreground and background
     examples.
     """
-    rois_per_image = min(max_rois,int(cfg.TRAIN.BATCH_SIZE_PER_IM))
+    # rois_per_image = min(max_rois,int(cfg.TRAIN.BATCH_SIZE_PER_IM))
+    rois_per_image = int(cfg.TRAIN.BATCH_SIZE_PER_IM)
     fg_rois_per_image = int(np.round(cfg.TRAIN.FG_FRACTION * rois_per_image))
     max_overlaps = roidb['max_overlaps']
 
