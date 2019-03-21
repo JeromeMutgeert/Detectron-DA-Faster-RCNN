@@ -202,7 +202,7 @@ def build_generic_detection_model(
 
         if not cfg.MODEL.RPN_ONLY:
             # Add the Fast R-CNN head
-            head_loss_gradients['box'], blob_feats_rois_all, dim_feats_rois_all = _add_fast_rcnn_head(
+            head_loss_gradients['box'] = _add_fast_rcnn_head(
                 model, add_roi_box_head_func, blob_conv, dim_conv,
                 spatial_scale_conv
             )
@@ -225,9 +225,9 @@ def build_generic_detection_model(
             # Add Image-level loss
             head_loss_gradients['image'] = _add_image_level_classifier(model, blob_conv, dim_conv, spatial_scale_conv)
             # Add Instance-level loss
-            head_loss_gradients['instance'] = _add_instance_level_classifier(model, blob_feats_rois_all, dim_feats_rois_all)
+            head_loss_gradients['instance'], blob_feats_rois_all, dim_feats_rois_all = _add_instance_level_classifier(model, blob_conv, dim_conv, spatial_scale_conv)
             # Add consistency regularization
-            head_loss_gradients['consistency'] = _add_consistency_loss(model, blob_conv, dim_conv, blob_feats_rois_all, dim_feats_rois_all)
+            #head_loss_gradients['consistency'] = _add_consistency_loss(model, blob_conv, dim_conv, blob_feats_rois_all, dim_feats_rois_all)
 
         if model.train:
             loss_gradients = {}
@@ -280,7 +280,7 @@ def _add_image_level_classifier(model, blob_in, dim_in, spatial_scale_in):
     else:
         return None
 
-def _add_instance_level_classifier(model, blob_in, dim_in):
+def _add_instance_level_classifier(model, blob_in, dim_in, spatial_scale):
     from detectron.utils.c2 import const_fill
     from detectron.utils.c2 import gauss_fill
 
@@ -291,8 +291,23 @@ def _add_instance_level_classifier(model, blob_in, dim_in):
         grad_output = inputs[-1]
         outputs[0].reshape(grad_output.shape)
         outputs[0].data[...] = -1.0*scale*grad_output.data
-    model.GradientScalerLayer([blob_in], ['dc_grl'], -1.0*cfg.TRAIN.DA_INS_GRL_WEIGHT)
-    model.FC('dc_grl', 'dc_ip1', dim_in, 1024,
+    model.RoIFeatureTransform(
+        blob_in,
+        'da_pool5',
+        blob_rois='da_rois',
+        method=cfg.FAST_RCNN.ROI_XFORM_METHOD,
+        resolution=7,
+        sampling_ratio=cfg.FAST_RCNN.ROI_XFORM_SAMPLING_RATIO,
+        spatial_scale=spatial_scale
+    )
+    model.FCShared('da_pool5', 'da_fc6', dim_in * 7 * 7, 4096, 
+        weight='fc6_w', bias='fc6_b')
+    model.Relu('da_fc6', 'da_fc6')
+    model.FCShared('da_fc6', 'da_fc7', 4096, 4096,
+        weight='fc7_w', bias='fc7_b')
+    da_blobs = model.Relu('da_fc7', 'da_fc7')
+    model.GradientScalerLayer([da_blobs], ['dc_grl'], -1.0*cfg.TRAIN.DA_INS_GRL_WEIGHT)
+    model.FC('dc_grl', 'dc_ip1', 4096, 1024,
              weight_init=gauss_fill(0.01), bias_init=const_fill(0.0))
     model.Relu('dc_ip1', 'dc_relu_1')
     model.Dropout('dc_relu_1', 'dc_drop_1', ratio=0.5, is_test=False)
@@ -313,7 +328,7 @@ def _add_instance_level_classifier(model, blob_in, dim_in):
         )
         loss_gradient = blob_utils.get_loss_gradients(model, [dc_loss])
         model.AddLosses('loss_dc')
-    return loss_gradient
+    return loss_gradient, da_blobs, 4096
 
 
 def _add_consistency_loss(model, blob_img_in, img_dim_in, blob_ins_in, ins_dim_in):
@@ -331,8 +346,10 @@ def _add_consistency_loss(model, blob_img_in, img_dim_in, blob_ins_in, ins_dim_i
         outputs[0].feed(repeated_da_conv)
         
     def grad_expand_as(inputs, outputs):
+        # Ordering is [inputs, outputs, grad_outputs]
         import numpy as np
         img_prob = inputs[0].data
+# <<<<<<< HEAD
         rois = inputs[1].data
         grad_output = inputs[3]
         grad_input = outputs[0]
@@ -350,20 +367,21 @@ def _add_consistency_loss(model, blob_img_in, img_dim_in, blob_ins_in, ins_dim_i
             grad_i[b,...] = g_is[b]
         
         grad_input.reshape(img_prob.shape)
+# =======
+#         ins_prob = inputs[1].data
+#         domain_mask = inputs[2].data
+#         grad_output = inputs[4]
+#         grad_input = outputs[0]
+#         grad_input.reshape(inputs[0].shape)
+#         # TODO bad practise, only support batch size=2
+#         intervals = [0, np.nonzero(domain_mask)[0].shape[0], domain_mask.shape[0]-np.nonzero(domain_mask)[0].shape[0]]
+#         unit = grad_output.shape[0]//2
+#         grad_o = grad_output.data[...]
+#         grad_i = np.zeros(inputs[0].shape)
+#         for i in range(inputs[0].shape[0]):
+#             grad_i[i] = np.sum(grad_o[intervals[i]:intervals[i+1], 0])*np.ones(grad_i[i].shape).astype(np.float32)/(img_prob.shape[1]*img_prob.shape[2]*img_prob.shape[3])
+# >>>>>>> 836e746... update rois sampling strategy for domain adaptation
         grad_input.data[...] = grad_i
-        
-        # old code:
-        # grad_input.reshape(inputs[0].shape)
-        # unit = grad_output.shape[0]//2
-        # grad_o = grad_output.data[...]
-        # grad_i = np.zeros(inputs[0].shape)
-        # sums = np.zeros(img_prob.shape[0],dtype=np.float32)
-        # for b_idx in zip(rois[:,1],grad_o):
-        #     sums[b_idx] += grad_o
-        #
-        # for im in range(inputs[0].shape[0]):
-        #     grad_i[b] = np.sum(grad_o[b*unit:(b+1)*unit, 0])*np.full(grad_i[b].shape,val,dtype=np.float32)
-        # grad_input.data[...] = grad_i
     
     model.GradientScalerLayer([blob_img_in], ['da_grl_copy'], 1.0*cfg.TRAIN.DA_IMG_GRL_WEIGHT)
     model.ConvShared('da_grl_copy', 'da_conv_1_copy', img_dim_in, 512, kernel=1, pad=0, stride=1, weight='da_conv_1_w', bias='da_conv_1_b')
@@ -425,7 +443,7 @@ def _add_fast_rcnn_head(
         loss_gradients = fast_rcnn_heads.add_fast_rcnn_losses(model)
     else:
         loss_gradients = None
-    return loss_gradients, blob_frcn, dim_frcn
+    return loss_gradients
 
 
 def _add_roi_mask_head(
