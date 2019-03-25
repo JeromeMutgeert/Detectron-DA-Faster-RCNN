@@ -1,3 +1,4 @@
+#LANGUAGE python3
 # Python 3 required. This is a seperate process.
 
 import aiohttp
@@ -12,14 +13,19 @@ import cv2
 # Settings:
 Buffer = 100
 BackBuffer = 20
-Max_Query = 12
-Timeout = 40
+Max_Query = 20
+Timeout = 30
+
+
+ids_file = "ids.txt"
+shuffling = False
+
+cacheLoc = "/media/jerome/DATA/Study_d/ThesisD/TargetData/"
 
 
 url_base = "https://test.yisual.com/images/media/download/picturethis/"
 headers = {"api-key": "ccea03e0e3a08c428870393376e5cf7b7be7a55c", "api-secret": os.environ["SECRET"]}
 
-cacheLoc = "/media/jerome/DATA/Study_d/ThesisD/TargetData/"
 
 # dummy_im_id = "5461e5219da59bde29aed195"
 # dummy_url = url_base + dummy_im_id
@@ -60,7 +66,8 @@ async def download_coroutine(session, im_id, im_num):
     url = url_base + im_id
     im = None
     problematic = False
-    while type(im) == type(None):
+    this_timeout = Timeout
+    while type(im) == type(None):# and (not problematic):
         try:
             if os.path.exists(cache):
                 # copy from cache:
@@ -68,11 +75,11 @@ async def download_coroutine(session, im_id, im_num):
                 res = True
 
             else:
-                with async_timeout.timeout(Timeout):
+                with async_timeout.timeout(this_timeout):
                     async with session.get(url,headers=headers) as response:
                         with open(filename, 'wb') as f_handle:
                             while True:
-                                chunk = await response.content.read(1024)
+                                chunk = await response.content.read(1024*128)
                                 if not chunk:
                                     # print('done')
                                     break
@@ -90,6 +97,7 @@ async def download_coroutine(session, im_id, im_num):
 
         except:
             problematic = True
+            this_timeout += 10
             append_log("Downloading timed out, retrying {} {}".format(im_num,im_id))
             print("Downloading timed out, retrying {} {}".format(im_num,im_id))
 
@@ -127,11 +135,12 @@ if __name__ == "__main__":
         os.fsync(f.fileno())
 
     ids = []
-    with open("ids.txt",'r') as f:
+    with open(ids_file,'r') as f:
         ids = [i.strip() for i in f.readlines()]
         
     def shuffle(ids, epoch):
-        # np.random.shuffle(ids)
+        if shuffling:
+            np.random.shuffle(ids)
         filename = "ids_ep{}.txt".format(epoch)
         with open(filename,'w') as f:
             f.write('\n'.join(ids))
