@@ -404,7 +404,7 @@ def _add_consistency_loss(model, blob_img_in, img_dim_in, blob_ins_in, ins_dim_i
     loss_gradient = None
     if model.train:
         model.net.Python(f=expand_as, grad_f=grad_expand_as, grad_input_indices=[0], grad_output_indices=[0])(
-            ['img_probs', 'rois'], ['repeated_img_probs'])
+            ['img_probs', 'da_rois'], ['repeated_img_probs'])
         dist = model.net.L1Distance(['repeated_img_probs', 'ins_probs'], ['consistency_dist'])
         # dist = model.net.SquaredL2Distance(['repeated_img_probs', 'ins_probs'], ['consistency_dist'])
         loss_consistency = model.net.AveragedLoss(dist, 'loss_consistency')
