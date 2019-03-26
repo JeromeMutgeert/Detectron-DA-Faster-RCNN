@@ -242,11 +242,12 @@ def _sample_da_rois(roidb, im_scale, batch_idx):
     """Generate a random sample of RoIs for domain adaptation.
     """
     max_overlaps = roidb['max_overlaps']
-    rois_per_image = min(max_overlaps.shape[0], int(cfg.TRAIN.BATCH_SIZE_PER_IM))
+    # rois_per_image = min(max_overlaps.shape[0], int(cfg.TRAIN.BATCH_SIZE_PER_IM))
 
     # The indices that we're selecting (both fg and bg)
     # keep_inds = np.append(fg_inds, bg_inds)
-    keep_inds = npr.choice(range(max_overlaps.shape[0]), size=rois_per_image, replace=False)
+    # keep_inds = npr.choice(range(max_overlaps.shape[0]), size=rois_per_image, replace=False)
+    keep_inds = np.arange(max_overlaps.shape[0])
     # Label is the class each RoI has max overlap with
     sampled_labels = roidb['max_classes'][keep_inds]
     # sampled_labels[fg_rois_per_image:] = 0  # Label bg RoIs with class 0
