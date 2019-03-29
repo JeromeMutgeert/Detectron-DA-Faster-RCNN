@@ -1091,9 +1091,9 @@ def assert_and_infer_cfg(cache_urls=True, make_immutable=True):
         __C.TEST.PRECOMPUTED_PROPOSALS = False
     
     # Added by Jerome, to support the TargetDataLoaderProcess:
-    if __C.TRAIN.TARGET_DATASETS[0] == 'live_targets':
+    if __C.TRAIN.DOMAIN_ADAPTATION and __C.TRAIN.TARGET_DATASETS[0] == 'live_targets':
         __C.TRAIN.LIVE_DATASET = True
-    if __C.TRAIN.LIVE_DATASET:
+    if __C.TRAIN.DOMAIN_ADAPTATION and __C.TRAIN.LIVE_DATASET:
         __C.TRAIN.ASPECT_GROUPING = False
         
     if cache_urls:

@@ -128,9 +128,12 @@ def add_fast_rcnn_blobs(blobs, im_scales, roidb):
         frcn_blobs = _sample_rois(entry, im_scales[im_i], im_i)#, max_rois=min_rois_per_img)
         for k, v in frcn_blobs.items():
             blobs[k].append(v)
-        da_blobs = _sample_da_rois(entry, im_scales[im_i], im_i)
-        for k, v in da_blobs.items():
-            blobs[k].append(v)
+        
+        if cfg.TRAIN.DOMAIN_ADAPTATION:
+            da_blobs = _sample_da_rois(entry, im_scales[im_i], im_i)
+            for k, v in da_blobs.items():
+                blobs[k].append(v)
+        
     # Concat the training blob lists into tensors
     for k, v in blobs.items():
         if isinstance(v, list) and len(v) > 0:
@@ -265,11 +268,10 @@ def _sample_da_rois(roidb, im_scale, batch_idx):
     )
     
     # optionally add Domain Adaptive R-CNN blobs
-    if cfg.TRAIN.DOMAIN_ADAPTATION:
-        if roidb['is_source']:
-            blob_dict['dc_label'] = np.expand_dims(np.ones(sampled_labels.shape, dtype=np.int32), axis=1)
-        else:
-            blob_dict['dc_label'] = np.expand_dims(np.zeros(sampled_labels.shape, dtype=np.int32), axis=1)
+    if roidb['is_source']:
+        blob_dict['dc_label'] = np.expand_dims(np.ones(sampled_labels.shape, dtype=np.int32), axis=1)
+    else:
+        blob_dict['dc_label'] = np.expand_dims(np.zeros(sampled_labels.shape, dtype=np.int32), axis=1)
 
     return blob_dict
 
