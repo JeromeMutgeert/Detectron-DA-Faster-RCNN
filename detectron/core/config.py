@@ -79,8 +79,12 @@ __C.TRAIN.TARGET_DATASETS = ()
 __C.TRAIN.SOURCE_PROPOSAL_FILES = ()
 __C.TRAIN.TARGET_PROPOSAL_FILES = ()
 
-# added by Jerome, to support the TargetDataLoaderProcess:
+# added by Jerome:
+# To support the TargetDataLoaderProcess:
 __C.TRAIN.LIVE_DATASET = False
+# In order to evade the 2-day limit on job scripts, the training process can be interrupted by creating a checkpoint file
+# after each full epoch on the source set (for me coco) and directly restarting the training process:
+__C.INTERRUPTING = False
 
 # Initialize network with weights from this .pkl file
 __C.TRAIN.WEIGHTS = ''

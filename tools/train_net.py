@@ -112,6 +112,10 @@ def main():
     np.random.seed(cfg.RNG_SEED)
     # Execute the training run
     checkpoints = detectron.utils.train.train_model()
+    
+    if cfg.INTERRUPTING and 'final' not in checkpoints:
+        return
+    
     # Test the trained model
     if not args.skip_test:
         test_model(checkpoints['final'], args.multi_gpu_testing, args.opts)

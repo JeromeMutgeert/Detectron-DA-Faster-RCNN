@@ -35,7 +35,7 @@ import numpy as np
 import os
 import re
 
-from caffe2.python import memonger
+from caffe2.python import memonger,net_drawer
 from caffe2.python import workspace
 
 from detectron.core.config import cfg
@@ -58,9 +58,18 @@ def train_model():
     setup_model_for_training(model, weights_file, output_dir)
     training_stats = TrainingStats(model)
     CHECKPOINT_PERIOD = int(cfg.TRAIN.SNAPSHOT_ITERS / cfg.NUM_GPUS)
+    
+    if cfg.INTERRUPTING:
+        source_set_size = len(model.roi_data_loader.roidb)
+        if cfg.TRAIN.DOMAIN_ADAPTATION:
+            source_ims_per_batch = cfg.NUM_GPUS * (cfg.TRAIN.IMS_PER_BATCH//2)
+        else:
+            source_ims_per_batch = cfg.NUM_GPUS * cfg.TRAIN.IMS_PER_BATCH
+        CHECKPOINT_PERIOD = int(source_set_size / (source_ims_per_batch * cfg.NUM_GPUS) + 1.0)
 
     for cur_iter in range(start_iter, cfg.SOLVER.MAX_ITER):
         # print('iter:',cur_iter)
+        
         if model.roi_data_loader.has_stopped():
             handle_critical_error(model, 'roi_data_loader failed')
         training_stats.IterTic()
@@ -71,12 +80,32 @@ def train_model():
         training_stats.IterToc()
         training_stats.UpdateIterStats()
         training_stats.LogIterStats(cur_iter, lr)
-
+        
         if (cur_iter + 1) % CHECKPOINT_PERIOD == 0 and cur_iter > start_iter:
             checkpoints[cur_iter] = os.path.join(
                 output_dir, 'model_iter{}.pkl'.format(cur_iter)
             )
             nu.save_model_to_weights_file(checkpoints[cur_iter], model)
+            
+            if cfg.INTERRRUPTING:
+                # stop this process and restart to continue form the checkpoint.
+                model.roi_data_loader.shutdown()
+                
+                if cfg.TRAIN.DOMAIN_ADAPTATION:
+                    # triggers target data loader to stop:
+                    with open('./TargetDataLoaderProcess/read.txt','w') as f:
+                        f.write(str(0))
+                        f.flush()
+                        os.fsync(f.fileno())
+                        
+                # wait a bit for it to stop:
+                import time
+                time.sleep(5)
+                
+                # enqueue new job:
+                os.system('sbatch run.job')
+                
+                return checkpoints
 
         if cur_iter == start_iter + training_stats.LOG_PERIOD:
             # Reset the iteration timer to remove outliers from the first few
@@ -184,6 +213,22 @@ def setup_model_for_training(model, weights_file, output_dir):
     logger.info('Outputs saved to: {:s}'.format(os.path.abspath(output_dir)))
     dump_proto_files(model, output_dir)
 
+    # from IPython import display
+    # graph = net_drawer.GetPydotGraphMinimal(model.net.Proto().op,"da-frcnn",rankdir='LR')
+    # png = graph.create(format='png')
+    # with open('graph.png','w') as f:
+    #     f.write(png)
+    #     f.flush()
+    # print(graph)
+    # import pydot
+    # print(pydot.graph_from_dot_data(graph))
+    # (graph2,) = pydot.graph_from_dot_data(str(graph))
+    # png = graph2.create_png()
+    # png = graph.create_png()
+    # import matplotlib.pyplot as plt
+    # plt.imshow('graph.png')
+    # plt.show()
+    
     # Start loading mini-batches and enqueuing blobs
     model.roi_data_loader.register_sigint_handler()
     # Jerome: TODO: set back to True:
