@@ -111,8 +111,9 @@ def _get_image_blob(roidb):
         roi['height'] = h
         boxes = roi['boxes']
         # will be only true for live_targets:
-        if len(boxes) == 1 and (boxes[0] == np.array([0.,0.,0.,0.],dtype=np.float32)).all():
-            roi['boxes'] = np.array([[w*.2,h*.2,w*.8,h*.8]],dtype=np.float32)  # to make sure enough (one or more) anchors are retained
+        if cfg.TRAIN.DOMAIN_ADAPTATION:
+            if len(boxes) == 1 and (boxes[0] == np.array([0.,0.,0.,0.],dtype=np.float32)).all():
+                roi['boxes'] = np.array([[w*.2,h*.2,w*.8,h*.8]],dtype=np.float32)  # to make sure enough (one or more) anchors are retained
         
         target_size = cfg.TRAIN.SCALES[scale_inds[i]]
         im, im_scale = blob_utils.prep_im_for_blob(
