@@ -60,7 +60,7 @@ def train_model():
     CHECKPOINT_PERIOD = int(cfg.TRAIN.SNAPSHOT_ITERS / cfg.NUM_GPUS)
     
     if cfg.INTERRUPTING:
-        source_set_size = len(model.roi_data_loader.roidb)
+        source_set_size = len(model.roi_data_loader._roidb)
         if cfg.TRAIN.DOMAIN_ADAPTATION:
             source_ims_per_batch = cfg.NUM_GPUS * (cfg.TRAIN.IMS_PER_BATCH//2)
         else:
