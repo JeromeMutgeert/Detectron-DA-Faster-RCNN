@@ -164,34 +164,36 @@ class RoIDataLoader(object):
             row_perm = np.random.permutation(np.arange(inds.shape[0]))
             inds = np.reshape(inds[row_perm, :], (-1, ))
             self._perm = inds
-            if self._target_roidb != None:
-                widths = np.array([r['width'] for r in self._target_roidb])
-                heights = np.array([r['height'] for r in self._target_roidb])
-                horz = (widths >= heights)
-                vert = np.logical_not(horz)
-                horz_inds = np.where(horz)[0]
-                vert_inds = np.where(vert)[0]
-
-                horz_inds = np.random.permutation(horz_inds)
-                vert_inds = np.random.permutation(vert_inds)
-                mb = cfg.TRAIN.IMS_PER_BATCH-cfg.TRAIN.IMS_PER_BATCH//2
-                horz_inds = horz_inds[:(len(horz_inds) // mb) * mb]
-                vert_inds = vert_inds[:(len(vert_inds) // mb) * mb]
-                inds = np.hstack((horz_inds, vert_inds))
-
-                inds = np.reshape(inds, (-1, mb))
-                row_perm = np.random.permutation(np.arange(inds.shape[0]))
-                inds = np.reshape(inds[row_perm, :], (-1, ))
-                self._target_perm = inds
         else:
             self._perm = np.random.permutation(np.arange(len(self._roidb)))
-            if self._target_roidb != None:
-                self._target_perm = np.random.permutation(
-                    np.arange(len(self._target_roidb)))
         self._perm = deque(self._perm)
-        if self._target_roidb != None:
-            self._target_perm = deque(self._target_perm)
         self._cur = 0
+        
+    def _shuffle_target_roidb_inds(self):
+        """Randomly permute the training roidb. Not thread safe."""
+        if cfg.TRAIN.ASPECT_GROUPING:
+            widths = np.array([r['width'] for r in self._target_roidb])
+            heights = np.array([r['height'] for r in self._target_roidb])
+            horz = (widths >= heights)
+            vert = np.logical_not(horz)
+            horz_inds = np.where(horz)[0]
+            vert_inds = np.where(vert)[0]
+
+            horz_inds = np.random.permutation(horz_inds)
+            vert_inds = np.random.permutation(vert_inds)
+            mb = cfg.TRAIN.IMS_PER_BATCH-cfg.TRAIN.IMS_PER_BATCH//2
+            horz_inds = horz_inds[:(len(horz_inds) // mb) * mb]
+            vert_inds = vert_inds[:(len(vert_inds) // mb) * mb]
+            inds = np.hstack((horz_inds, vert_inds))
+
+            inds = np.reshape(inds, (-1, mb))
+            row_perm = np.random.permutation(np.arange(inds.shape[0]))
+            inds = np.reshape(inds[row_perm, :], (-1, ))
+            self._target_perm = inds
+        else:
+            self._target_perm = np.random.permutation(
+                np.arange(len(self._target_roidb)))
+        self._target_perm = deque(self._target_perm)
         self._target_cur = 0
 
     def _get_next_minibatch_inds(self):
@@ -219,8 +221,10 @@ class RoIDataLoader(object):
                                          cfg.TRAIN.IMS_PER_BATCH//2)
                 self._cur += cfg.TRAIN.IMS_PER_BATCH//2
                 self._target_cur += cfg.TRAIN.IMS_PER_BATCH-cfg.TRAIN.IMS_PER_BATCH//2
-                if self._cur >= len(self._perm) or self._target_cur >= len(self._target_perm):
+                if self._cur >= len(self._perm):
                     self._shuffle_roidb_inds()
+                if self._target_cur >= len(self._target_perm):
+                    self._shuffle_target_roidb_inds()
         return db_inds, db_target_inds
 
     def get_output_names(self):
