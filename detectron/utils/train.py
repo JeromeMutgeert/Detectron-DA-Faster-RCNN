@@ -65,7 +65,8 @@ def train_model():
             source_ims_per_batch = cfg.NUM_GPUS * (cfg.TRAIN.IMS_PER_BATCH//2)
         else:
             source_ims_per_batch = cfg.NUM_GPUS * cfg.TRAIN.IMS_PER_BATCH
-        CHECKPOINT_PERIOD = int(source_set_size / (source_ims_per_batch * cfg.NUM_GPUS) + 1.0)
+        CHECKPOINT_PERIOD = int(1.0 + source_set_size / (source_ims_per_batch * cfg.NUM_GPUS))
+        print("Checkpoint period, and interruption, set for aftet {} batches".format(CHECKPOINT_PERIOD))
 
     for cur_iter in range(start_iter, cfg.SOLVER.MAX_ITER):
         # print('iter:',cur_iter)
