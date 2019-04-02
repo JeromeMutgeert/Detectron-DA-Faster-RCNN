@@ -88,7 +88,7 @@ def train_model():
             )
             nu.save_model_to_weights_file(checkpoints[cur_iter], model)
             
-            if cfg.INTERRRUPTING:
+            if cfg.INTERRUPTING:
                 # stop this process and restart to continue form the checkpoint.
                 model.roi_data_loader.shutdown()
                 
