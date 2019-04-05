@@ -34,6 +34,7 @@ import logging
 import numpy as np
 import os
 import re
+import time
 
 from caffe2.python import memonger,net_drawer
 from caffe2.python import workspace
@@ -50,6 +51,8 @@ import detectron.utils.net as nu
 
 def train_model():
     """Model training loop."""
+    start_time = time.time()
+    
     model, weights_file, start_iter, checkpoints, output_dir = create_model()
     if 'final' in checkpoints:
         # The final model was found in the output directory, so nothing to do
@@ -59,17 +62,18 @@ def train_model():
     training_stats = TrainingStats(model)
     CHECKPOINT_PERIOD = int(cfg.TRAIN.SNAPSHOT_ITERS / cfg.NUM_GPUS)
     
-    if cfg.INTERRUPTING:
-        source_set_size = len(model.roi_data_loader._roidb)
-        if cfg.TRAIN.DOMAIN_ADAPTATION:
-            source_ims_per_batch = cfg.NUM_GPUS * (cfg.TRAIN.IMS_PER_BATCH//2)
-        else:
-            source_ims_per_batch = cfg.NUM_GPUS * cfg.TRAIN.IMS_PER_BATCH
-        CHECKPOINT_PERIOD = int(1.0 + source_set_size / (source_ims_per_batch * cfg.NUM_GPUS))
-        print("Checkpoint period, and interruption, set for aftet {} batches".format(CHECKPOINT_PERIOD))
+    # if cfg.INTERRUPTING:
+    #     source_set_size = len(model.roi_data_loader._roidb)
+    #     if cfg.TRAIN.DOMAIN_ADAPTATION:
+    #         source_ims_per_batch = cfg.NUM_GPUS * (cfg.TRAIN.IMS_PER_BATCH//2)
+    #     else:
+    #         source_ims_per_batch = cfg.NUM_GPUS * cfg.TRAIN.IMS_PER_BATCH
+    #     CHECKPOINT_PERIOD = int(1.0 + source_set_size / (source_ims_per_batch * cfg.NUM_GPUS))
+    #     print("Checkpoint period, and interruption, set for after {} batches".format(CHECKPOINT_PERIOD))
 
     for cur_iter in range(start_iter, cfg.SOLVER.MAX_ITER):
         # print('iter:',cur_iter)
+        # print(model.roi_data_loader._cur,list(model.roi_data_loader._perm)[:10])
         
         if model.roi_data_loader.has_stopped():
             handle_critical_error(model, 'roi_data_loader failed')
@@ -82,31 +86,35 @@ def train_model():
         training_stats.UpdateIterStats()
         training_stats.LogIterStats(cur_iter, lr)
         
+        if cfg.INTERRUPTING and time.time() - start_time > cfg.THRESH_TIME:
+            checkpoints[cur_iter] = os.path.join(
+                output_dir, 'model_iter{}.pkl'.format(cur_iter)
+            )
+            nu.save_model_to_weights_file(checkpoints[cur_iter], model,cur_iter=cur_iter)
+        
+            # stop this process and restart to continue form the checkpoint.
+            model.roi_data_loader.shutdown()
+            
+            if cfg.TRAIN.DOMAIN_ADAPTATION:
+                # triggers target data loader to stop:
+                with open('./TargetDataLoaderProcess/read.txt','w') as f:
+                    f.write(str(0))
+                    f.flush()
+                    os.fsync(f.fileno())
+                    
+            # wait a bit for it to stop:
+            time.sleep(5)
+            
+            # enqueue new job:
+            os.system('sbatch run.job')
+            
+            return checkpoints
+        
         if (cur_iter + 1) % CHECKPOINT_PERIOD == 0 and cur_iter > start_iter:
             checkpoints[cur_iter] = os.path.join(
                 output_dir, 'model_iter{}.pkl'.format(cur_iter)
             )
             nu.save_model_to_weights_file(checkpoints[cur_iter], model)
-            
-            if cfg.INTERRUPTING:
-                # stop this process and restart to continue form the checkpoint.
-                model.roi_data_loader.shutdown()
-                
-                if cfg.TRAIN.DOMAIN_ADAPTATION:
-                    # triggers target data loader to stop:
-                    with open('./TargetDataLoaderProcess/read.txt','w') as f:
-                        f.write(str(0))
-                        f.flush()
-                        os.fsync(f.fileno())
-                        
-                # wait a bit for it to stop:
-                import time
-                time.sleep(5)
-                
-                # enqueue new job:
-                os.system('sbatch run.job')
-                
-                return checkpoints
 
         if cur_iter == start_iter + training_stats.LOG_PERIOD:
             # Reset the iteration timer to remove outliers from the first few
@@ -159,7 +167,7 @@ def create_model():
             iter_string = re.findall(r'(?<=model_iter)\d+(?=\.pkl)', f)
             if len(iter_string) > 0:
                 checkpoint_iter = int(iter_string[0])
-                if checkpoint_iter > start_iter:
+                if checkpoint_iter >= start_iter:
                     # Start one iteration immediately after the checkpoint iter
                     start_iter = checkpoint_iter + 1
                     resume_weights_file = f

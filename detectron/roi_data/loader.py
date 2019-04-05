@@ -225,8 +225,40 @@ class RoIDataLoader(object):
                     self._shuffle_roidb_inds()
                 if self._target_cur >= len(self._target_perm):
                     self._shuffle_target_roidb_inds()
+        
+        # logger.info(str(('loading',db_inds,self._cur)))
         return db_inds, db_target_inds
-
+    
+    def get_perm_state(self,iters_done):
+        with self._lock:
+            perm = self._perm
+            cur = self._cur
+        
+        if self._target_roidb == None:
+            ims_per_batch = cfg.TRAIN.IMS_PER_BATCH
+        else:
+            ims_per_batch = cfg.TRAIN.IMS_PER_BATCH//2
+        
+        batches_per_roidb = (len(self._roidb) + ims_per_batch - 1)//ims_per_batch
+        
+        actual_cur = (iters_done % batches_per_roidb) * ims_per_batch
+        
+        # undo imgs in mb_queue and BlobsQueue:
+        mb_qsize = max(0, cur - actual_cur)
+        perm.rotate(mb_qsize)
+        cur = actual_cur
+        state = np.array([cur] + list(perm), dtype=np.int32)
+        # logger.info(str(('saving',cur,list(perm)[:10],-mb_qsize)))
+        return state
+    
+    def set_perm_state(self,state):
+        cur = state[0]
+        perm = state[1:]
+        with self._lock:
+            self._minibatch_queue.empty()
+            self._perm = deque(perm)
+            self._cur = cur
+    
     def get_output_names(self):
         return self._output_names
 

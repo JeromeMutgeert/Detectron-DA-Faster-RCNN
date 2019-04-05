@@ -116,6 +116,13 @@ def initialize_gpu_from_weights_file(model, weights_file, gpu_id=0):
                     src_blobs[src_name + '_momentum'].astype(
                         np.float32, copy=False))
 
+    # let roidb continue with the data that is not seen yet.
+    if 'roidb_state' in src_blobs:
+        model.roi_data_loader.set_perm_state(src_blobs['roidb_state'])
+        del src_blobs['roidb_state']
+    else:
+        logger.info("roidb state not loaded")
+
     # We preserve blobs that are in the weights file but not used by the current
     # model. We load these into CPU memory under the '__preserve__/' namescope.
     # These blobs will be stored when saving a model to a weights file. This
@@ -133,7 +140,7 @@ def initialize_gpu_from_weights_file(model, weights_file, gpu_id=0):
                     '{:s} preserved in workspace (unused)'.format(src_name))
 
 
-def save_model_to_weights_file(weights_file, model):
+def save_model_to_weights_file(weights_file, model,cur_iter=None):
     """Stash model weights in a dictionary and pickle them to a file. We map
     GPU device scoped names to unscoped names (e.g., 'gpu_0/conv1_w' ->
     'conv1_w').
@@ -165,6 +172,12 @@ def save_model_to_weights_file(weights_file, model):
                     ' {:s} -> {:s} (preserved)'.format(
                         scoped_name, unscoped_name))
                 blobs[unscoped_name] = workspace.FetchBlob(scoped_name)
+    # Save roidb shuffling:
+    if 'roidb_state' not in blobs and type(cur_iter) != type(None):
+        blobs['roidb_state'] = model.roi_data_loader.get_perm_state(cur_iter + 1) # give iters_done.
+    else:
+        logger.info("roidb state not stored")
+    
     cfg_yaml = envu.yaml_dump(cfg)
     save_object(dict(blobs=blobs, cfg=cfg_yaml), weights_file)
 

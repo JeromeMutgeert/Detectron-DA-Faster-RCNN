@@ -85,6 +85,7 @@ __C.TRAIN.LIVE_DATASET = False
 # In order to evade the 2-day limit on job scripts, the training process can be interrupted by creating a checkpoint file
 # after each full epoch on the source set (for me coco) and directly restarting the training process:
 __C.INTERRUPTING = False
+__C.THRESH_TIME = 171900 #seconds; 2 days minus 15 minutes.
 
 # Initialize network with weights from this .pkl file
 __C.TRAIN.WEIGHTS = ''
