@@ -126,7 +126,7 @@ def train_model():
 
     # Save the final model
     checkpoints['final'] = os.path.join(output_dir, 'model_final.pkl')
-    nu.save_model_to_weights_file(checkpoints['final'], model)
+    nu.save_model_to_weights_file(checkpoints['final'], model, cur_iter=cur_iter)
     # Shutdown data loading threads
     model.roi_data_loader.shutdown()
     return checkpoints
