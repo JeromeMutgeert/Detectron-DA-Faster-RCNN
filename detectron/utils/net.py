@@ -117,12 +117,9 @@ def initialize_gpu_from_weights_file(model, weights_file, gpu_id=0):
                         np.float32, copy=False))
 
     # let roidb continue with the data that is not seen yet.
-    if 'roidb_state' in src_blobs:
+    if 'roidb_state' in src_blobs and model.roi_data_loader is not None:
         model.roi_data_loader.set_perm_state(src_blobs['roidb_state'])
         del src_blobs['roidb_state']
-    elif 'roidb_info' in src_blobs:
-        model.roi_data_loader.set_perm_state(src_blobs['roidb_info'])
-        logger.info('roidb state loaded by roidb_info')
     else:
         logger.info("roidb state not loaded")
 
