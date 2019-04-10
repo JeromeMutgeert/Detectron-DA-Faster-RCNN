@@ -122,6 +122,7 @@ def initialize_gpu_from_weights_file(model, weights_file, gpu_id=0):
         del src_blobs['roidb_state']
     elif 'roidb_info' in src_blobs:
         model.roi_data_loader.set_perm_state(src_blobs['roidb_info'])
+        logger.info('roidb state loaded by roidb_info')
     else:
         logger.info("roidb state not loaded")
 
