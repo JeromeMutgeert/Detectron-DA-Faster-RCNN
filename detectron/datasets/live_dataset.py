@@ -165,10 +165,15 @@ class LiveRoidb(list):
         return roi
     
     def __len__(self):
-        return 10  # it is lying, the truth is 0.
+        return 20000 #10  # it is lying, the truth is 0.
     
     def __iter__(self):
-        raise NotImplementedError()
+        print("Warning! Live target enumerator requested.")
+        # raise NotImplementedError()
+        def gen(this):
+            for _ in range(20000):
+                yield next(this.generator)
+        return gen(self)
 
 
 def dl_by_id(im_id):

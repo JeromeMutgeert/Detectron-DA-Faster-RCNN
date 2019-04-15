@@ -79,6 +79,7 @@ def parse_args():
         type=int,
         nargs=2
     )
+    # This allows to set all fields of cfg. Use to set TEST.WEIGTHS and optionally override NUM_GPUS:
     parser.add_argument(
         'opts',
         help='See detectron/core/config.py for all options',

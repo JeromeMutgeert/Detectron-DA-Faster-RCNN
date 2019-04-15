@@ -232,10 +232,17 @@ def test_net(
         dataset_name, proposal_file, ind_range
     )
     model = initialize_model_from_cfg(weights_file, gpu_id=gpu_id)
+    
     num_images = len(roidb)
     num_classes = cfg.MODEL.NUM_CLASSES
+    
     all_boxes, all_segms, all_keyps = empty_results(num_classes, num_images)
+    if cfg.TEST.COLLECT_ALL:
+        all_feats = []
+        all_class_weights = np.empty(shape=(num_images,num_classes),dtype=np.float32)
+    
     timers = defaultdict(Timer)
+    
     for i, entry in enumerate(roidb):
         if cfg.TEST.PRECOMPUTED_PROPOSALS:
             # The roidb may contain ground-truth rois (for example, if the roidb
@@ -253,16 +260,23 @@ def test_net(
 
         im = cv2.imread(entry['image'])
         with c2_utils.NamedCudaScope(gpu_id):
-            cls_boxes_i, cls_segms_i, cls_keyps_i = im_detect_all(
-                model, im, box_proposals, timers
+            cls_boxes_i, cls_segms_i, cls_keyps_i, sum_softmax, topk_feats = im_detect_all(
+                model, im, box_proposals, timers, return_feats= cfg.TEST.COLLECT_ALL
             )
-
+        
+        # print('nfeats:', topk_feats.shape[0])
+        # print(topk_feats)
+        
         extend_results(i, all_boxes, cls_boxes_i)
         if cls_segms_i is not None:
             extend_results(i, all_segms, cls_segms_i)
         if cls_keyps_i is not None:
             extend_results(i, all_keyps, cls_keyps_i)
-
+        
+        if cfg.TEST.COLLECT_ALL:
+            all_class_weights[i] = sum_softmax
+            all_feats.append(topk_feats) # will accumulate about 2 Gb of feats on COCO train set (118K imgs)
+        
         if i % 10 == 0:  # Reduce log file size
             ave_total_time = np.sum([t.average_time for t in timers.values()])
             eta_seconds = ave_total_time * (num_images - i - 1)
@@ -316,6 +330,9 @@ def test_net(
             cfg=cfg_yaml
         ), det_file
     )
+    if cfg.TEST.COLLECT_ALL:
+        save_object(all_class_weights,'class_weights.pkl')
+        save_object(all_feats,'feature_vectors.pkl')
     logger.info('Wrote detections to: {}'.format(os.path.abspath(det_file)))
     return all_boxes, all_segms, all_keyps
 
@@ -342,6 +359,17 @@ def get_roidb_and_dataset(dataset_name, proposal_file, ind_range):
     """Get the roidb for the dataset specified in the global cfg. Optionally
     restrict it to a range of indices if ind_range is a pair of integers.
     """
+    
+    if dataset_name == 'live_targets':
+        from detectron.datasets.live_dataset import LiveRoidb
+        roidb = LiveRoidb()
+        import detectron.datasets.dummy_datasets as dummy_datasets
+        json_dataset = dummy_datasets.get_coco_dataset()
+        if not cfg.TRAIN.USE_FLIPPED:
+            logger.info('Live target data set will use flipped examples anyway!')
+        logger.info('"Loaded" dataset: {:s}'.format('live_targets'))
+        return roidb, json_dataset, 0, len(roidb), len(roidb)
+    
     dataset = JsonDataset(dataset_name)
     if cfg.TEST.PRECOMPUTED_PROPOSALS:
         assert proposal_file, 'No proposal file given'

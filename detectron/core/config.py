@@ -79,14 +79,6 @@ __C.TRAIN.TARGET_DATASETS = ()
 __C.TRAIN.SOURCE_PROPOSAL_FILES = ()
 __C.TRAIN.TARGET_PROPOSAL_FILES = ()
 
-# added by Jerome:
-# To support the TargetDataLoaderProcess:
-__C.TRAIN.LIVE_DATASET = False
-# In order to evade the 2-day limit on job scripts, the training process can be interrupted by creating a checkpoint file
-# after each full epoch on the source set (for me coco) and directly restarting the training process:
-__C.INTERRUPTING = False
-__C.THRESH_TIME = 171900 #seconds; 2 days minus 15 minutes.
-
 # Initialize network with weights from this .pkl file
 __C.TRAIN.WEIGHTS = ''
 
@@ -565,6 +557,20 @@ __C.RETINANET.SOFTMAX = False
 # Inference cls score threshold, anchors with score > INFERENCE_TH are
 # considered for inference
 __C.RETINANET.INFERENCE_TH = 0.05
+
+
+# ---------------------------------------------------------------------------- #
+# Extra Domain Adaptation options added by Jerome
+# ---------------------------------------------------------------------------- #
+# To support the TargetDataLoaderProcess:
+__C.TRAIN.LIVE_DATASET = False
+# In order to evade the 2-day limit on job scripts, the training process can be interrupted by creating a checkpoint file
+# after each full epoch on the source set (for me coco) and directly restarting the training process:
+__C.INTERRUPTING = False
+__C.THRESH_TIME = 171900 #seconds; 2 days minus 15 minutes.
+
+# for collecting class distribution data and penultimate feature vectors (4096 dims, max 8 per img)
+__C.TEST.COLLECT_ALL = False
 
 
 # ---------------------------------------------------------------------------- #

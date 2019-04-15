@@ -49,7 +49,7 @@ import detectron.utils.keypoints as keypoint_utils
 logger = logging.getLogger(__name__)
 
 
-def im_detect_all(model, im, box_proposals, timers=None):
+def im_detect_all(model, im, box_proposals, timers=None, return_feats=False):
     if timers is None:
         timers = defaultdict(Timer)
 
@@ -62,19 +62,24 @@ def im_detect_all(model, im, box_proposals, timers=None):
     if cfg.TEST.BBOX_AUG.ENABLED:
         scores, boxes, im_scale = im_detect_bbox_aug(model, im, box_proposals)
     else:
-        scores, boxes, im_scale = im_detect_bbox(
-            model, im, cfg.TEST.SCALE, cfg.TEST.MAX_SIZE, boxes=box_proposals
+        scores, boxes, im_scale, feats = im_detect_bbox(
+            model, im, cfg.TEST.SCALE, cfg.TEST.MAX_SIZE, boxes=box_proposals, get_feats=return_feats
         )
     timers['im_detect_bbox'].toc()
+    
+    # Now scores contains all rpn_rois, together with the rpn boxes, and 'boxes' are the rpn_boxes adjusted by the final regression outputs.
 
     # score and boxes are from the whole image after score thresholding and nms
     # (they are not separated by class)
     # cls_boxes boxes and scores are separated by class and in the format used
     # for evaluating results
     timers['misc_bbox'].tic()
-    scores, boxes, cls_boxes = box_results_with_nms_and_limit(scores, boxes)
+    scores, boxes, cls_boxes, sum_softmax, topk_feats = box_results_with_nms_and_limit(scores, boxes, feats=feats)
     timers['misc_bbox'].toc()
-
+    
+    
+    # Now cls_boxes contains the nms_dets with all final boxes and (per class NMS pruned) softmax outputs.
+    
     if cfg.MODEL.MASK_ON and boxes.shape[0] > 0:
         timers['im_detect_mask'].tic()
         if cfg.TEST.MASK_AUG.ENABLED:
@@ -104,8 +109,8 @@ def im_detect_all(model, im, box_proposals, timers=None):
         timers['misc_keypoints'].toc()
     else:
         cls_keyps = None
-
-    return cls_boxes, cls_segms, cls_keyps
+    
+    return cls_boxes, cls_segms, cls_keyps, sum_softmax, topk_feats
 
 
 def im_conv_body_only(model, im, target_scale, target_max_size):
@@ -118,7 +123,7 @@ def im_conv_body_only(model, im, target_scale, target_max_size):
     return im_scale
 
 
-def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
+def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None, get_feats=False):
     """Bounding box object detection for an image with given box proposals.
 
     Arguments:
@@ -156,7 +161,10 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
     for k, v in inputs.items():
         workspace.FeedBlob(core.ScopedName(k), v)
     workspace.RunNet(model.net.Proto().name)
-
+    
+    # import detectron.utils.net as nu
+    # nu.print_net(model)
+    
     # Read out blobs
     if cfg.MODEL.FASTER_RCNN:
         rois = workspace.FetchBlob(core.ScopedName('rois'))
@@ -167,7 +175,14 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
     scores = workspace.FetchBlob(core.ScopedName('cls_prob')).squeeze()
     # In case there is 1 proposal
     scores = scores.reshape([-1, scores.shape[-1]])
-
+    
+    if get_feats:
+        feats = workspace.FetchBlob(core.ScopedName('fc7')).squeeze()
+        # print('feats:', feats.shape, 'nonzeros first:',sum([f == 0.0 for f in feats[0]]))
+        feats = np.concatenate((scores,feats),axis=1)
+    else:
+        feats = None
+        
     if cfg.TEST.BBOX_REG:
         # Apply bounding-box regression deltas
         box_deltas = workspace.FetchBlob(core.ScopedName('bbox_pred')).squeeze()
@@ -190,8 +205,8 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
         # Map scores and predictions back to the original set of boxes
         scores = scores[inv_index, :]
         pred_boxes = pred_boxes[inv_index, :]
-
-    return scores, pred_boxes, im_scale
+    
+    return scores, pred_boxes, im_scale, feats
 
 
 def im_detect_bbox_aug(model, im, box_proposals=None):
@@ -746,7 +761,7 @@ def combine_heatmaps_size_dep(hms_ts, ds_ts, us_ts, boxes, heur_f):
     return hms_c
 
 
-def box_results_with_nms_and_limit(scores, boxes):
+def box_results_with_nms_and_limit(scores, boxes, feats=None):
     """Returns bounding-box detection results by thresholding on scores and
     applying non-maximum suppression (NMS).
 
@@ -762,6 +777,7 @@ def box_results_with_nms_and_limit(scores, boxes):
     """
     num_classes = cfg.MODEL.NUM_CLASSES
     cls_boxes = [[] for _ in range(num_classes)]
+    feat_pointers = [[] for _ in range(num_classes)] # shadows cls_boxes, remembering the pointers to the corresponding feats.
     # Apply threshold on detection probabilities and apply NMS
     # Skip j = 0, because it's the background class
     for j in range(1, num_classes):
@@ -782,6 +798,8 @@ def box_results_with_nms_and_limit(scores, boxes):
         else:
             keep = box_utils.nms(dets_j, cfg.TEST.NMS)
             nms_dets = dets_j[keep, :]
+            if feats is not None:
+                feat_pointers[j] = keep
         # Refine the post-NMS boxes using bounding-box voting
         if cfg.TEST.BBOX_VOTE.ENABLED:
             nms_dets = box_utils.box_voting(
@@ -791,22 +809,45 @@ def box_results_with_nms_and_limit(scores, boxes):
                 scoring_method=cfg.TEST.BBOX_VOTE.SCORING_METHOD
             )
         cls_boxes[j] = nms_dets
-
+    
+    if feats is not None:
+        # Before limiting the number of detections, first collect global image class distribution:
+        sum_softmax = np.zeros((num_classes,))
+        for j in range(1,num_classes):
+            sum_softmax[j] = cls_boxes[j][:,-1].sum()
+        # print('ndetects, sum_probs, min_prob, nclasses:',sum([len(subl) for subl in cls_boxes]), sum_softmax.sum(), sum_softmax.min(), sum([ss != 0 for ss in sum_softmax]))
+    else:
+        sum_softmax = None
+        topk_feats = None
+    
     # Limit to max_per_image detections **over all classes**
     if cfg.TEST.DETECTIONS_PER_IM > 0:
         image_scores = np.hstack(
             [cls_boxes[j][:, -1] for j in range(1, num_classes)]
         )
         if len(image_scores) > cfg.TEST.DETECTIONS_PER_IM:
-            image_thresh = np.sort(image_scores)[-cfg.TEST.DETECTIONS_PER_IM]
+            sorted_scores = np.sort(image_scores)
+            image_thresh = sorted_scores[-cfg.TEST.DETECTIONS_PER_IM]
             for j in range(1, num_classes):
                 keep = np.where(cls_boxes[j][:, -1] >= image_thresh)[0]
                 cls_boxes[j] = cls_boxes[j][keep, :]
+                if feats is not None:
+                    feat_pointers[j] = feat_pointers[j][keep]
+                    
+            if feats is not None:
+                image_thresh = max(0.5,sorted_scores[-8]) # at most the top 8 objects from each image.
+                for j in range(1, num_classes):
+                    keep = np.where(cls_boxes[j][:, -1] >= image_thresh)[0]
+                    feat_pointers[j] = feat_pointers[j][keep]
+                feat_pointers = list(set([p for points in feat_pointers for p in points]))
+                topk_feats = feats[feat_pointers]
+            
 
     im_results = np.vstack([cls_boxes[j] for j in range(1, num_classes)])
     boxes = im_results[:, :-1]
     scores = im_results[:, -1]
-    return scores, boxes, cls_boxes
+    
+    return scores, boxes, cls_boxes, sum_softmax, topk_feats
 
 
 def segm_results(cls_boxes, masks, ref_boxes, im_h, im_w):
