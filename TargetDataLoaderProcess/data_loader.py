@@ -12,7 +12,7 @@ import cv2
 
 # Settings:
 Buffer = 100
-BackBuffer = 20
+BackBuffer = 200
 Max_Query = 20
 Timeout = 30
 
