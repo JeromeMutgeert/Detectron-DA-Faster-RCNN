@@ -118,7 +118,13 @@ def initialize_gpu_from_weights_file(model, weights_file, gpu_id=0):
 
     # let roidb continue with the data that is not seen yet.
     if 'roidb_state' in src_blobs and model.roi_data_loader is not None:
-        model.roi_data_loader.set_perm_state(src_blobs['roidb_state'])
+        loaded_perm = src_blobs['roidb_state']
+        current_perm = model.roi_data_loader._perm
+        if len(loaded_perm) == len(current_perm):
+            model.roi_data_loader.set_perm_state(loaded_perm)
+            logger.info('roidb perm state loaded')
+        else:
+            logger.info('roidb state not loaded, different size train set.')
         del src_blobs['roidb_state']
     else:
         logger.info("roidb state not loaded")

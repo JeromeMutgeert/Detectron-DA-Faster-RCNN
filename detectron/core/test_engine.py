@@ -45,7 +45,11 @@ import detectron.utils.net as net_utils
 import detectron.utils.subprocess as subprocess_utils
 import detectron.utils.vis as vis_utils
 
+# for loading detections.pkl if already present
+from detectron.utils.io import load_object
+
 logger = logging.getLogger(__name__)
+
 
 
 def get_eval_functions():
@@ -99,6 +103,7 @@ def run_inference(
             for i in range(len(cfg.TEST.DATASETS)):
                 dataset_name, proposal_file = get_inference_dataset(i)
                 output_dir = get_output_dir(dataset_name, training=False)
+                
                 results = parent_func(
                     weights_file,
                     dataset_name,
@@ -136,6 +141,23 @@ def run_inference(
     return all_results
 
 
+def coco_detects_to_voc(all_boxes):
+    # coco2voc: for each of the 81 coco classes the corresponding voc class index. See coco2voc.ipynb
+    coco2voc = np.array([ 0, 15,  2,  7, 14,  1,  6, 19,  0,  4,  0,  0,  0,  0,  0,  3,  8,
+       12, 13, 17, 10,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+        0,  0,  0,  0,  0,  0,  5,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+        0,  0,  0,  0,  0,  0,  9, 18, 16,  0, 11,  0, 20,  0,  0,  0,  0,
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0], dtype=np.int32)
+    
+    voc_boxes = [[] for _ in range(21)]
+    for i,cls_dets in enumerate(all_boxes):
+        voc_i = coco2voc[i]
+        if voc_i != 0:
+            voc_boxes[voc_i] = cls_dets
+            
+    return voc_boxes
+
+
 def test_net_on_dataset(
     weights_file,
     dataset_name,
@@ -145,7 +167,8 @@ def test_net_on_dataset(
     gpu_id=0
 ):
     """Run inference on a dataset."""
-    dataset = JsonDataset(dataset_name)
+    if dataset_name[:5] != 'live_':
+        dataset = JsonDataset(dataset_name)
     test_timer = Timer()
     test_timer.tic()
     if multi_gpu:
@@ -159,6 +182,13 @@ def test_net_on_dataset(
         )
     test_timer.toc()
     logger.info('Total inference time: {:.3f}s'.format(test_timer.average_time))
+    
+    if cfg.TEST.COCO_TO_VOC:
+        all_boxes = coco_detects_to_voc(all_boxes)
+    
+    if dataset_name[:5] == 'live_':
+        return None
+    
     results = task_evaluation.evaluate_all(
         dataset, all_boxes, all_segms, all_keyps, output_dir
     )
@@ -227,113 +257,123 @@ def test_net(
     """
     assert not cfg.MODEL.RPN_ONLY, \
         'Use rpn_generate to generate proposals from RPN-only models'
-
-    roidb, dataset, start_ind, end_ind, total_num_images = get_roidb_and_dataset(
-        dataset_name, proposal_file, ind_range
-    )
-    model = initialize_model_from_cfg(weights_file, gpu_id=gpu_id)
     
-    num_images = len(roidb)
-    num_classes = cfg.MODEL.NUM_CLASSES
-    
-    all_boxes, all_segms, all_keyps = empty_results(num_classes, num_images)
-    if cfg.TEST.COLLECT_ALL:
-        all_feats = []
-        all_class_weights = np.empty(shape=(num_images,num_classes),dtype=np.float32)
-    
-    timers = defaultdict(Timer)
-    
-    for i, entry in enumerate(roidb):
-        if cfg.TEST.PRECOMPUTED_PROPOSALS:
-            # The roidb may contain ground-truth rois (for example, if the roidb
-            # comes from the training or val split). We only want to evaluate
-            # detection on the *non*-ground-truth rois. We select only the rois
-            # that have the gt_classes field set to 0, which means there's no
-            # ground truth.
-            box_proposals = entry['boxes'][entry['gt_classes'] == 0]
-            if len(box_proposals) == 0:
-                continue
-        else:
-            # Faster R-CNN type models generate proposals on-the-fly with an
-            # in-network RPN; 1-stage models don't require proposals.
-            box_proposals = None
-
-        im = cv2.imread(entry['image'])
-        with c2_utils.NamedCudaScope(gpu_id):
-            cls_boxes_i, cls_segms_i, cls_keyps_i, sum_softmax, topk_feats = im_detect_all(
-                model, im, box_proposals, timers, return_feats= cfg.TEST.COLLECT_ALL
-            )
-        
-        # print('nfeats:', topk_feats.shape[0])
-        # print(topk_feats)
-        
-        extend_results(i, all_boxes, cls_boxes_i)
-        if cls_segms_i is not None:
-            extend_results(i, all_segms, cls_segms_i)
-        if cls_keyps_i is not None:
-            extend_results(i, all_keyps, cls_keyps_i)
-        
-        if cfg.TEST.COLLECT_ALL:
-            all_class_weights[i] = sum_softmax
-            all_feats.append(topk_feats) # will accumulate about 2 Gb of feats on COCO train set (118K imgs)
-        
-        if i % 10 == 0:  # Reduce log file size
-            ave_total_time = np.sum([t.average_time for t in timers.values()])
-            eta_seconds = ave_total_time * (num_images - i - 1)
-            eta = str(datetime.timedelta(seconds=int(eta_seconds)))
-            det_time = (
-                timers['im_detect_bbox'].average_time +
-                timers['im_detect_mask'].average_time +
-                timers['im_detect_keypoints'].average_time
-            )
-            misc_time = (
-                timers['misc_bbox'].average_time +
-                timers['misc_mask'].average_time +
-                timers['misc_keypoints'].average_time
-            )
-            logger.info(
-                (
-                    'im_detect: range [{:d}, {:d}] of {:d}: '
-                    '{:d}/{:d} {:.3f}s + {:.3f}s (eta: {})'
-                ).format(
-                    start_ind + 1, end_ind, total_num_images, start_ind + i + 1,
-                    start_ind + num_images, det_time, misc_time, eta
-                )
-            )
-
-        if cfg.VIS:
-            im_name = os.path.splitext(os.path.basename(entry['image']))[0]
-            vis_utils.vis_one_image(
-                im[:, :, ::-1],
-                '{:d}_{:s}'.format(i, im_name),
-                os.path.join(output_dir, 'vis'),
-                cls_boxes_i,
-                segms=cls_segms_i,
-                keypoints=cls_keyps_i,
-                thresh=cfg.VIS_TH,
-                box_alpha=0.8,
-                dataset=dataset,
-                show_class=True
-            )
-
-    cfg_yaml = envu.yaml_dump(cfg)
+    # determine file name
     if ind_range is not None:
         det_name = 'detection_range_%s_%s.pkl' % tuple(ind_range)
     else:
         det_name = 'detections.pkl'
     det_file = os.path.join(output_dir, det_name)
-    save_object(
-        dict(
-            all_boxes=all_boxes,
-            all_segms=all_segms,
-            all_keyps=all_keyps,
-            cfg=cfg_yaml
-        ), det_file
-    )
-    if cfg.TEST.COLLECT_ALL:
-        save_object(all_class_weights,'class_weights.pkl')
-        save_object(all_feats,'feature_vectors.pkl')
-    logger.info('Wrote detections to: {}'.format(os.path.abspath(det_file)))
+    
+    # load results if already present
+    if os.path.exists(det_file):
+        res = load_object(det_file)
+        all_boxes, all_segms, all_keyps = res['all_boxes'],res['all_segms'],res['all_keyps']
+    else:
+    
+        roidb, dataset, start_ind, end_ind, total_num_images = get_roidb_and_dataset(
+            dataset_name, proposal_file, ind_range
+        )
+        model = initialize_model_from_cfg(weights_file, gpu_id=gpu_id)
+        
+        num_images = len(roidb)
+        num_classes = cfg.MODEL.NUM_CLASSES
+        
+        all_boxes, all_segms, all_keyps = empty_results(num_classes, num_images)
+        if cfg.TEST.COLLECT_ALL:
+            all_feats = []
+            all_class_weights = np.empty(shape=(num_images,num_classes),dtype=np.float32)
+    
+        timers = defaultdict(Timer)
+        
+        for i, entry in enumerate(roidb):
+            if cfg.TEST.PRECOMPUTED_PROPOSALS:
+                # The roidb may contain ground-truth rois (for example, if the roidb
+                # comes from the training or val split). We only want to evaluate
+                # detection on the *non*-ground-truth rois. We select only the rois
+                # that have the gt_classes field set to 0, which means there's no
+                # ground truth.
+                box_proposals = entry['boxes'][entry['gt_classes'] == 0]
+                if len(box_proposals) == 0:
+                    continue
+            else:
+                # Faster R-CNN type models generate proposals on-the-fly with an
+                # in-network RPN; 1-stage models don't require proposals.
+                box_proposals = None
+    
+            im = cv2.imread(entry['image'])
+            with c2_utils.NamedCudaScope(gpu_id):
+                cls_boxes_i, cls_segms_i, cls_keyps_i, sum_softmax, topk_feats = im_detect_all(
+                    model, im, box_proposals, timers, return_feats= cfg.TEST.COLLECT_ALL
+                )
+            
+            # print('nfeats:', topk_feats.shape[0])
+            # print(topk_feats)
+            
+            extend_results(i, all_boxes, cls_boxes_i)
+            if cls_segms_i is not None:
+                extend_results(i, all_segms, cls_segms_i)
+            if cls_keyps_i is not None:
+                extend_results(i, all_keyps, cls_keyps_i)
+            
+            if cfg.TEST.COLLECT_ALL:
+                all_class_weights[i] = sum_softmax
+                all_feats.append(topk_feats) # will accumulate about 2 Gb of feats on COCO train set (118K imgs)
+            
+            if i % 10 == 0:  # Reduce log file size
+                ave_total_time = np.sum([t.average_time for t in timers.values()])
+                eta_seconds = ave_total_time * (num_images - i - 1)
+                eta = str(datetime.timedelta(seconds=int(eta_seconds)))
+                det_time = (
+                    timers['im_detect_bbox'].average_time +
+                    timers['im_detect_mask'].average_time +
+                    timers['im_detect_keypoints'].average_time
+                )
+                misc_time = (
+                    timers['misc_bbox'].average_time +
+                    timers['misc_mask'].average_time +
+                    timers['misc_keypoints'].average_time
+                )
+                logger.info(
+                    (
+                        'im_detect: range [{:d}, {:d}] of {:d}: '
+                        '{:d}/{:d} {:.3f}s + {:.3f}s (eta: {})'
+                    ).format(
+                        start_ind + 1, end_ind, total_num_images, start_ind + i + 1,
+                        start_ind + num_images, det_time, misc_time, eta
+                    )
+                )
+    
+            if cfg.VIS:
+                im_name = os.path.splitext(os.path.basename(entry['image']))[0]
+                vis_utils.vis_one_image(
+                    im[:, :, ::-1],
+                    '{:d}_{:s}'.format(i, im_name),
+                    os.path.join(output_dir, 'vis'),
+                    cls_boxes_i,
+                    segms=cls_segms_i,
+                    keypoints=cls_keyps_i,
+                    thresh=cfg.VIS_TH,
+                    box_alpha=0.8,
+                    dataset=dataset,
+                    show_class=True
+                )
+    
+        cfg_yaml = envu.yaml_dump(cfg)
+        save_object(
+            dict(
+                all_boxes=all_boxes,
+                all_segms=all_segms,
+                all_keyps=all_keyps,
+                cfg=cfg_yaml
+            ), det_file
+        )
+        logger.info('Wrote detections to: {}'.format(os.path.abspath(det_file)))
+        if cfg.TEST.COLLECT_ALL:
+            save_object(all_class_weights,os.path.join(output_dir,'class_weights.pkl'))
+            save_object(all_feats,os.path.join(output_dir,'feature_vectors.pkl'))
+            logger.info('Wrote class weights and feature vectors to output folder')
+            
     return all_boxes, all_segms, all_keyps
 
 

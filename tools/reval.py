@@ -85,12 +85,23 @@ def parse_args():
 def do_reval(dataset_name, output_dir, args):
     dataset = JsonDataset(dataset_name)
     dets = load_object(os.path.join(output_dir, 'detections.pkl'))
-
+    
     # Override config with the one saved in the detections file
     if args.cfg_file is not None:
         core_config.merge_cfg_from_cfg(core_config.load_cfg(dets['cfg']))
     else:
         core_config._merge_a_into_b(core_config.load_cfg(dets['cfg']), cfg)
+    
+    # re-filter on score threshold:
+    dets['all_boxes'] = \
+        [
+            [
+                im[im[:,4] > cfg.TEST.SCORE_THRESH,:] if len(im) != 0 else []
+                for im in cls
+            ]
+            for cls in dets['all_boxes']
+        ]
+    
     results = task_evaluation.evaluate_all(
         dataset,
         dets['all_boxes'],

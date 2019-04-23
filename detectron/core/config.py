@@ -564,6 +564,7 @@ __C.RETINANET.INFERENCE_TH = 0.05
 # ---------------------------------------------------------------------------- #
 # To support the TargetDataLoaderProcess:
 __C.TRAIN.LIVE_DATASET = False
+
 # In order to evade the 2-day limit on job scripts, the training process can be interrupted by creating a checkpoint file
 # after each full epoch on the source set (for me coco) and directly restarting the training process:
 __C.INTERRUPTING = False
@@ -572,6 +573,14 @@ __C.THRESH_TIME = 171900 #seconds; 2 days minus 15 minutes.
 # for collecting class distribution data and penultimate feature vectors (4096 dims, max 8 per img)
 __C.TEST.COLLECT_ALL = False
 
+# when evaluating coco detections using voc labels, set to true:
+__C.TEST.COCO_TO_VOC = False
+
+# when using a subset of the combined voc train set ('voc_2007_train','voc_2007_val','voc_2012_train'):
+# give the file with the voc subset as a 1 dimensional numpy array with dtype = bool. See analyse_detects.py.
+# for example: 'voc_subset.npy' created by np.save('voc_subset.npy',np.array(voc_subset,dtype=bool))
+# When '' no subset is used:
+__C.VOC_SUBSET = ''
 
 # ---------------------------------------------------------------------------- #
 # Solver options
@@ -1106,7 +1115,8 @@ def assert_and_infer_cfg(cache_urls=True, make_immutable=True):
         __C.TRAIN.LIVE_DATASET = True
     if __C.TRAIN.DOMAIN_ADAPTATION and __C.TRAIN.LIVE_DATASET:
         __C.TRAIN.ASPECT_GROUPING = False
-        
+    # if __C.TRAIN.VOC_SUBSET != '': make sure that the right three voc datasets are used.
+    
     if cache_urls:
         cache_cfg_urls()
     if make_immutable:

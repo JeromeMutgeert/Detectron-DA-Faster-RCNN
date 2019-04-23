@@ -196,7 +196,7 @@ _DATASETS = {
         _IM_DIR:
             _DATA_DIR + '/VOC2007/JPEGImages',
         _ANN_FN:
-            _DATA_DIR + '/VOC2007/annotations/voc_2007_train.json',
+            _DATA_DIR + '/VOC2007/annotations/pascal_train2007.json',
         _DEVKIT_DIR:
             _DATA_DIR + '/VOC2007/VOCdevkit2007'
     },
@@ -204,7 +204,7 @@ _DATASETS = {
         _IM_DIR:
             _DATA_DIR + '/VOC2007/JPEGImages',
         _ANN_FN:
-            _DATA_DIR + '/VOC2007/annotations/voc_2007_val.json',
+            _DATA_DIR + '/VOC2007/annotations/pascal_val2007.json',
         _DEVKIT_DIR:
             _DATA_DIR + '/VOC2007/VOCdevkit2007'
     },
@@ -212,7 +212,7 @@ _DATASETS = {
         _IM_DIR:
             _DATA_DIR + '/VOC2007/JPEGImages',
         _ANN_FN:
-            _DATA_DIR + '/VOC2007/annotations/voc_2007_test.json',
+            _DATA_DIR + '/VOC2007/annotations/pascal_test2007.json',
         _DEVKIT_DIR:
             _DATA_DIR + '/VOC2007/VOCdevkit2007'
     },
@@ -220,7 +220,7 @@ _DATASETS = {
         _IM_DIR:
             _DATA_DIR + '/VOC2012/JPEGImages',
         _ANN_FN:
-            _DATA_DIR + '/VOC2012/annotations/voc_2012_train.json',
+            _DATA_DIR + '/VOC2012/annotations/pascal_train2012.json',
         _DEVKIT_DIR:
             _DATA_DIR + '/VOC2012/VOCdevkit2012'
     },
@@ -228,7 +228,7 @@ _DATASETS = {
         _IM_DIR:
             _DATA_DIR + '/VOC2012/JPEGImages',
         _ANN_FN:
-            _DATA_DIR + '/VOC2012/annotations/voc_2012_val.json',
+            _DATA_DIR + '/VOC2012/annotations/pascal_val2012.json',
         _DEVKIT_DIR:
             _DATA_DIR + '/VOC2012/VOCdevkit2012'
     },

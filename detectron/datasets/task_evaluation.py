@@ -334,6 +334,7 @@ def _coco_eval_to_keypoint_results(coco_eval):
 
 def _voc_eval_to_box_results(voc_eval):
     # Not supported (return empty results)
+    print('uspported voc_eval translation')
     return _empty_box_results()
 
 
