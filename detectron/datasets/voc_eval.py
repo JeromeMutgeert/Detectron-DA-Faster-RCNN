@@ -91,7 +91,8 @@ def voc_eval(detpath,
              classname,
              cachedir,
              ovthresh=0.5,
-             use_07_metric=False):
+             use_07_metric=False,
+             subset_pointer=None):
     """rec, prec, ap = voc_eval(detpath,
                                 annopath,
                                 imagesetfile,
@@ -116,7 +117,11 @@ def voc_eval(detpath,
     # assumes annotations are in annopath.format(imagename)
     # assumes imagesetfile is a text file with each line an image name
     # cachedir caches the annotations in a pickle file
-
+    
+    this_sub = None
+    if subset_pointer is not None:
+        this_sub = subset_pointer.subset
+    
     # first load gt
     if not os.path.isdir(cachedir):
         os.mkdir(cachedir)
@@ -126,6 +131,8 @@ def voc_eval(detpath,
     with open(imagesetfile, 'r') as f:
         lines = f.readlines()
     imagenames = [x.strip() for x in lines]
+    if subset_pointer is not None:
+        imagenames = [n for n,taken in zip(imagenames,this_sub) if taken]
 
     if not os.path.isfile(cachefile):
         # load annots
@@ -219,4 +226,4 @@ def voc_eval(detpath,
     prec = tp / np.maximum(tp + fp, np.finfo(np.float64).eps)
     ap = voc_ap(rec, prec, use_07_metric)
 
-    return rec, prec, ap
+    return rec, prec, ap, npos

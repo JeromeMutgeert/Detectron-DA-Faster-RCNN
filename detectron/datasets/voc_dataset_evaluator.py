@@ -40,11 +40,12 @@ def evaluate_boxes(
     output_dir,
     use_salt=True,
     cleanup=True,
-    use_matlab=False
+    use_matlab=False,
+    subset_pointer=None
 ):
     salt = '_{}'.format(str(uuid.uuid4())) if use_salt else ''
-    filenames = _write_voc_results_files(json_dataset, all_boxes, salt)
-    _do_python_eval(json_dataset, salt, output_dir)
+    filenames = _write_voc_results_files(json_dataset, all_boxes, salt, subset_pointer=subset_pointer)
+    _do_python_eval(json_dataset, salt, output_dir, subset_pointer=subset_pointer)
     if use_matlab:
         _do_matlab_eval(json_dataset, salt, output_dir)
     if cleanup:
@@ -54,16 +55,22 @@ def evaluate_boxes(
     return None
 
 
-def _write_voc_results_files(json_dataset, all_boxes, salt):
+def _write_voc_results_files(json_dataset, all_boxes, salt, subset_pointer=None):
+    if subset_pointer is not None:
+        this_sub = subset_pointer.subset
     filenames = []
     image_set_path = voc_info(json_dataset)['image_set_path']
     assert os.path.exists(image_set_path), \
         'Image set path does not exist: {}'.format(image_set_path)
     with open(image_set_path, 'r') as f:
         image_index = [x.strip() for x in f.readlines()]
+        if subset_pointer is not None:
+            image_index = [x for x,taken in zip(image_index,this_sub) if taken]
     # Sanity check that order of images in json dataset matches order in the
     # image set
     roidb = json_dataset.get_roidb()
+    if subset_pointer is not None:
+        roidb = [roi for roi,taken in zip(roidb,this_sub) if taken]
     for i, entry in enumerate(roidb):
         index = os.path.splitext(os.path.split(entry['image'])[1])[0]
         assert index == image_index[i]
@@ -101,7 +108,7 @@ def _get_voc_results_file_template(json_dataset, salt):
     return os.path.join(devkit_path, 'results', 'VOC' + year, 'Main', filename)
 
 
-def _do_python_eval(json_dataset, salt, output_dir='output'):
+def _do_python_eval(json_dataset, salt, output_dir='output', subset_pointer=None):
     info = voc_info(json_dataset)
     year = info['year']
     anno_path = info['anno_path']
@@ -109,6 +116,7 @@ def _do_python_eval(json_dataset, salt, output_dir='output'):
     devkit_path = info['devkit_path']
     cachedir = os.path.join(devkit_path, 'annotations_cache')
     aps = []
+    nposs = []
     # The PASCAL VOC metric changed in 2010
     use_07_metric = True if int(year) < 2010 else False
     logger.info('VOC07 metric? ' + ('Yes' if use_07_metric else 'No'))
@@ -119,14 +127,18 @@ def _do_python_eval(json_dataset, salt, output_dir='output'):
             continue
         filename = _get_voc_results_file_template(
             json_dataset, salt).format(cls)
-        rec, prec, ap = voc_eval(
+        rec, prec, ap, npos = voc_eval(
             filename, anno_path, image_set_path, cls, cachedir, ovthresh=0.5,
-            use_07_metric=use_07_metric)
+            use_07_metric=use_07_metric, subset_pointer=subset_pointer)
         aps += [ap]
-        logger.info('AP for {} = {:.4f}'.format(cls, ap))
+        nposs.append(npos)
+        logger.info('AP for {} {} = {:.4f}'.format(npos, cls, ap))
         res_file = os.path.join(output_dir, cls + '_pr.pkl')
         save_object({'rec': rec, 'prec': prec, 'ap': ap}, res_file)
     logger.info('Mean AP = {:.4f}'.format(np.mean(aps)))
+    nposs = np.array(nposs,dtype=float)
+    nposs /= nposs.sum()
+    logger.info('Weighted Mean AP = {:.4f}'.format((np.array(aps) * nposs).sum()))
     logger.info('~~~~~~~~')
     logger.info('Results:')
     for ap in aps:

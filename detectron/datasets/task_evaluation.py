@@ -51,13 +51,13 @@ logger = logging.getLogger(__name__)
 
 
 def evaluate_all(
-    dataset, all_boxes, all_segms, all_keyps, output_dir, use_matlab=False
+    dataset, all_boxes, all_segms, all_keyps, output_dir, use_matlab=False, subset_pointer=None
 ):
     """Evaluate "all" tasks, where "all" includes box detection, instance
     segmentation, and keypoint detection.
     """
     all_results = evaluate_boxes(
-        dataset, all_boxes, output_dir, use_matlab=use_matlab
+        dataset, all_boxes, output_dir, use_matlab=use_matlab, subset_pointer=subset_pointer
     )
     logger.info('Evaluating bounding boxes is done!')
     if cfg.MODEL.MASK_ON:
@@ -71,7 +71,7 @@ def evaluate_all(
     return all_results
 
 
-def evaluate_boxes(dataset, all_boxes, output_dir, use_matlab=False):
+def evaluate_boxes(dataset, all_boxes, output_dir, use_matlab=False, subset_pointer=None):
     """Evaluate bounding box detection."""
     logger.info('Evaluating detections')
     not_comp = not cfg.TEST.COMPETITION_MODE
@@ -90,7 +90,7 @@ def evaluate_boxes(dataset, all_boxes, output_dir, use_matlab=False):
         # For VOC, always use salt and always cleanup because results are
         # written to the shared VOCdevkit results directory
         voc_eval = voc_dataset_evaluator.evaluate_boxes(
-            dataset, all_boxes, output_dir, use_matlab=use_matlab
+            dataset, all_boxes, output_dir, use_matlab=use_matlab, subset_pointer=subset_pointer
         )
         box_results = _voc_eval_to_box_results(voc_eval)
     else:

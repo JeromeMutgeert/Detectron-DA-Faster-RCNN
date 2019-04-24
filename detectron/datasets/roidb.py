@@ -48,11 +48,6 @@ def combined_roidb_for_training(dataset_names, proposal_files, is_source=True):
         logger.info('"Loaded" dataset: {:s}'.format('live_targets'))
         return roidb
     
-    if cfg.VOC_SUBSET != '' and dataset_names == ('voc_2007_train','voc_2007_val','voc_2012_train'):
-        voc_subset = np.load(cfg.VOC_SUBSET)
-    else:
-        voc_subset = None
-    
     def get_roidb(dataset_name, proposal_file, is_source=True):
         ds = JsonDataset(dataset_name)
         roidb = ds.get_roidb(
@@ -62,11 +57,11 @@ def combined_roidb_for_training(dataset_names, proposal_files, is_source=True):
             is_source=is_source
         )
         
-        voc_subset = get_roidb.voc_subset
-        if cfg.VOC_SUBSET != '' and voc_subset is not None:
+        if cfg.VOC_SUBSET != '' and subset_pointer is not None:
             # print(len(voc_subset))
+            voc_subset = subset_pointer.subset
             this_sub = voc_subset[:len(roidb)]
-            get_roidb.voc_subset = voc_subset[len(roidb):]
+            subset_pointer.subset = voc_subset[len(roidb):]
             # print('remains',len(get_roidb.voc_subset)) # should have 0 remains for the last set, voc_2012_train.
             
             # # for pruning disk space:
@@ -84,8 +79,11 @@ def combined_roidb_for_training(dataset_names, proposal_files, is_source=True):
         logger.info('Loaded dataset: {:s}'.format(dataset_name))
         return roidb
     
-    # python magic:
-    get_roidb.voc_subset = voc_subset
+    if cfg.VOC_SUBSET != '' and dataset_names == ('voc_2007_train','voc_2007_val','voc_2012_train'):
+        subset_pointer = get_roidb #any dummy object could be used that is more advanced than 'object()' or similar builtins.
+        subset_pointer.subset = np.load(cfg.VOC_SUBSET)
+    else:
+        subset_pointer = None
     
     if isinstance(dataset_names, basestring):
         dataset_names = (dataset_names, )

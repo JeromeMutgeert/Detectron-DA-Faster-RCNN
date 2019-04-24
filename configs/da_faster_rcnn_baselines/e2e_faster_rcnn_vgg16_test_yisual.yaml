@@ -1,0 +1,84 @@
+# Default detectron lr schedule for coco:
+# lr: 0.00125 per image, divided by 10 after 0,96M and 1,28M images, finished after 1,44M images.
+# These images can be grouped in arbitrary batches, and because the loss is batch-averaged, the BASE_LR is set
+# to batch_size * 0.00125. Note that batch_size = TRAIN.IMS_PER_BATCH * NUM_GPUS.
+
+MODEL:
+  TYPE: generalized_rcnn
+  CONV_BODY: VGG16.add_VGG16_conv5_body
+  NUM_CLASSES: 81
+  FASTER_RCNN: True
+NUM_GPUS: 1
+SOLVER:
+  WEIGHT_DECAY: 0.0001
+  LR_POLICY: steps_with_decay
+  BASE_LR: 0.008 # 0.002 per image instead of 0.00125
+  GAMMA: 0.1
+  MAX_ITER: 180000 # half as long schedule.
+  STEPS: [0, 120000, 160000]
+RPN:
+  SIZES: (32, 64, 128, 256, 512)
+FAST_RCNN:
+  ROI_BOX_HEAD: VGG16.add_VGG16_roi_fc_head
+  ROI_XFORM_METHOD: RoIAlign
+TRAIN:
+  WEIGHTS: vgg16v2.pkl
+  DATASETS: ('coco_2017_train',)
+  SCALES: (800,)
+  MAX_SIZE: 1333
+  IMS_PER_BATCH: 4
+  BATCH_SIZE_PER_IM: 512
+TEST:
+  DATASETS: ('live_targets',)
+  SCALE: 800
+  MAX_SIZE: 1333
+  NMS: 0.5
+  RPN_PRE_NMS_TOP_N: 6000
+  RPN_POST_NMS_TOP_N: 1000
+  SCORE_THRESH: 0.00
+  COLLECT_ALL: True
+OUTPUT_DIR: collecting
+
+INTERRUPTING: True
+
+#MODEL:
+#  TYPE: generalized_rcnn
+#  CONV_BODY: VGG16.add_VGG16_conv5_body
+#  NUM_CLASSES: 81
+#  FASTER_RCNN: True
+#NUM_GPUS: 1
+#SOLVER:
+#  WEIGHT_DECAY: 0.0005
+#  LR_POLICY: steps_with_decay
+#  BASE_LR: 0.001
+#  GAMMA: 0.1
+#  MAX_ITER: 70000
+#  WARM_UP_ITERS: 0
+#  STEPS: [0, 50000]
+#RPN:
+#  SIZES: (128, 256, 512)
+#FAST_RCNN:
+#  ROI_BOX_HEAD: VGG16.add_VGG16_roi_fc_head
+#TRAIN:
+#  DOMAIN_ADAPTATION: True
+#  DA_IMG_GRL_WEIGHT: 0.2
+#  DA_INS_GRL_WEIGHT: 0.2
+#  WEIGHTS: vgg16v2.pkl
+#  SOURCE_DATASETS: ('coco_2017_val',)
+#  TARGET_DATASETS: ('live_targets',)
+#  SCALES: (800,)
+#  MAX_SIZE: 1600
+#  IMS_PER_BATCH: 2
+#  BATCH_SIZE_PER_IM: 256
+#  RPN_MIN_SIZE: 16
+#TEST:
+#  DATASETS: ('sim10k','cityscapes_car_val',)
+#  SCALE: 800
+#  MAX_SIZE: 1600
+#  RPN_PRE_NMS_TOP_N: 6000  # Per FPN level
+#  RPN_POST_NMS_TOP_N: 300
+#  FORCE_JSON_DATASET_EVAL: True
+#  RPN_MIN_SIZE: 16
+#OUTPUT_DIR: .
+#DATA_LOADER:
+#  NUM_THREADS: 4

@@ -100,16 +100,24 @@ def run_inference(
             # single process or (if multi_gpu_testing is True) using this process to
             # launch subprocesses that each run inference on a range of the dataset
             all_results = {}
+            
+            subset_pointer = None
+            if cfg.VOC_SUBSET != '':
+                subset_pointer = result_getter #any dummy object could be used that is more advanced than 'object()' or similar builtins.
+                subset_pointer.subset = np.load(cfg.VOC_SUBSET)
+                print('loading subset')
+            
             for i in range(len(cfg.TEST.DATASETS)):
                 dataset_name, proposal_file = get_inference_dataset(i)
                 output_dir = get_output_dir(dataset_name, training=False)
-                
+                print('len before',len(subset_pointer.subset))
                 results = parent_func(
                     weights_file,
                     dataset_name,
                     proposal_file,
                     output_dir,
-                    multi_gpu=multi_gpu_testing
+                    multi_gpu=multi_gpu_testing,
+                    subset_pointer=subset_pointer
                 )
                 all_results.update(results)
 
@@ -164,7 +172,8 @@ def test_net_on_dataset(
     proposal_file,
     output_dir,
     multi_gpu=False,
-    gpu_id=0
+    gpu_id=0,
+    subset_pointer=None
 ):
     """Run inference on a dataset."""
     if dataset_name[:5] != 'live_':
@@ -178,7 +187,8 @@ def test_net_on_dataset(
         )
     else:
         all_boxes, all_segms, all_keyps = test_net(
-            weights_file, dataset_name, proposal_file, output_dir, gpu_id=gpu_id
+            weights_file, dataset_name, proposal_file, output_dir, gpu_id=gpu_id,
+            subset_pointer=subset_pointer
         )
     test_timer.toc()
     logger.info('Total inference time: {:.3f}s'.format(test_timer.average_time))
@@ -190,8 +200,15 @@ def test_net_on_dataset(
         return None
     
     results = task_evaluation.evaluate_all(
-        dataset, all_boxes, all_segms, all_keyps, output_dir
+        dataset, all_boxes, all_segms, all_keyps, output_dir,
+        subset_pointer=subset_pointer
     )
+    
+    if subset_pointer is not None:
+        # prune the subset for the following datasets:
+        subset_pointer.subset = subset_pointer.subset[len(dataset.get_roidb()):]
+        print('remains',len(subset_pointer.subset)) # should have 0 remains for the last set, voc_2012_train.
+    
     return results
 
 
@@ -250,7 +267,8 @@ def test_net(
     proposal_file,
     output_dir,
     ind_range=None,
-    gpu_id=0
+    gpu_id=0,
+    subset_pointer=None
 ):
     """Run inference on all images in a dataset or over an index range of images
     in a dataset using a single GPU.
@@ -274,6 +292,18 @@ def test_net(
         roidb, dataset, start_ind, end_ind, total_num_images = get_roidb_and_dataset(
             dataset_name, proposal_file, ind_range
         )
+        
+        if subset_pointer is not None:
+            voc_subset = subset_pointer.subset
+            this_sub = voc_subset[:len(roidb)]
+            # subset_pointer.subset = voc_subset[len(roidb):]
+            
+            # filter roidb:
+            roidb = [roi for taking,roi in zip(this_sub,roidb) if taking]
+            
+            total_num_images = len(roidb)
+            end_ind = total_num_images
+        
         model = initialize_model_from_cfg(weights_file, gpu_id=gpu_id)
         
         num_images = len(roidb)

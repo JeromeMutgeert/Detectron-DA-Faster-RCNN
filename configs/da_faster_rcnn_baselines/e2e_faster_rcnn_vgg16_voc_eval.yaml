@@ -1,0 +1,42 @@
+MODEL:
+  TYPE: generalized_rcnn
+  CONV_BODY: VGG16.add_VGG16_conv5_body
+  NUM_CLASSES: 81
+  FASTER_RCNN: True
+NUM_GPUS: 1
+#SOLVER:
+#  WEIGHT_DECAY: 0.0001
+#  LR_POLICY: steps_with_decay
+#  BASE_LR: 0.008 # 0.002 per image instead of 0.00125
+#  GAMMA: 0.1
+#  MAX_ITER: 180000 # half as long schedule.
+#  STEPS: [0, 120000, 160000]
+RPN:
+  SIZES: (32, 64, 128, 256, 512)
+FAST_RCNN:
+  ROI_BOX_HEAD: VGG16.add_VGG16_roi_fc_head
+  ROI_XFORM_METHOD: RoIAlign
+#TRAIN:
+#  WEIGHTS: vgg16v2.pkl
+#  DATASETS: ('coco_2017_train',)
+#  SCALES: (800,)
+#  MAX_SIZE: 1333
+#  IMS_PER_BATCH: 4
+#  BATCH_SIZE_PER_IM: 512
+TEST:
+  # give by cmd args:
+  DATASETS: ('voc_2007_test','voc_2012_val')
+  COCO_TO_VOC: True
+  SCALE: 800
+  MAX_SIZE: 1333
+  NMS: 0.5
+  RPN_PRE_NMS_TOP_N: 6000
+  RPN_POST_NMS_TOP_N: 1000
+#  SCORE_THRESH: 0.0  # default: 0.05
+#  COLLECT_ALL: True
+OUTPUT_DIR: .
+
+VOC_SUBSET: 'voc_subset_val.npy'
+
+#INTERRUPTING: True
+
