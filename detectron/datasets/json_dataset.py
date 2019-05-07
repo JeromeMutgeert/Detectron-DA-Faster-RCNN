@@ -41,6 +41,7 @@ from pycocotools.coco import COCO
 from detectron.core.config import cfg
 from detectron.utils.timer import Timer
 import detectron.datasets.dataset_catalog as dataset_catalog
+import detectron.datasets.dummy_datasets as dummy_datasets
 import detectron.utils.boxes as box_utils
 from detectron.utils.io import load_object
 import detectron.utils.segms as segm_utils
@@ -125,7 +126,17 @@ class JsonDataset(object):
             )
         _add_class_assignments(roidb)
         _add_domain_assignments(roidb, is_source)
+        
+        if cfg.TRAIN.PADA:
+            self._add_class_weights(roidb)
+        
         return roidb
+
+    def _add_class_weights(self,roidb):
+        wts_file = os.path.join('collecting','test',self.name,'generalized_rcnn','class_weights.pkl')
+        wts = np.load(wts_file)
+        for i,roi in enumerate(roidb):
+            roi['sum_softmax'] = wts[i]
 
     def _prep_roidb_entry(self, entry):
         """Adds empty metadata fields to an roidb entry."""
@@ -330,7 +341,7 @@ class JsonDataset(object):
         return gt_kps
 
 
-def add_proposals(roidb, rois, scales, crowd_thresh):
+def add_proposals(roidb, rois, scales, crowd_thresh,model=None):
     """Add proposal boxes (rois) to an roidb that has ground-truth annotations
     but no proposals. If the proposals are not at the original image scale,
     specify the scale factor that separate them in scales.
@@ -340,18 +351,32 @@ def add_proposals(roidb, rois, scales, crowd_thresh):
         inv_im_scale = 1. / scales[i]
         idx = np.where(rois[:, 0] == i)[0]
         box_list.append(rois[idx, 1:] * inv_im_scale)
-    _merge_proposal_boxes_into_roidb(roidb, box_list)
+    _merge_proposal_boxes_into_roidb(roidb, box_list,model)
     if crowd_thresh > 0:
         _filter_crowd_proposals(roidb, crowd_thresh)
     _add_class_assignments(roidb)
 
 
-def _merge_proposal_boxes_into_roidb(roidb, box_list):
+def _merge_proposal_boxes_into_roidb(roidb, box_list,model=None):
     """Add proposal boxes to each roidb entry."""
     assert len(box_list) == len(roidb)
     for i, entry in enumerate(roidb):
+        
         boxes = box_list[i]
-        num_boxes = boxes.shape[0]
+        
+        if cfg.TRAIN.DOMAIN_ADAPTATION:
+            rois_per_image = min(len(boxes), int(cfg.TRAIN.BATCH_SIZE_PER_IM))
+            entry['da_boxes'] = np.array(boxes[:rois_per_image],dtype=np.float32)
+            if not entry['is_source']:
+                weight = model.class_weight_db.get_avg_pada_weight()
+                ims = cfg.TRAIN.IMS_PER_BATCH
+                source_imgs = ims-ims//2; target_imgs = ims//2
+                weight *= source_imgs/target_imgs
+                entry['pada_roi_weights'] = np.full(rois_per_image,weight,dtype=np.float32)
+                # print('pada_dc_target_weights:',rois_per_image*weight)
+                continue  # we do not supervise on target set rois.
+        
+        num_boxes = boxes.shape[0] #the rpn_rois for this image=entry
         gt_overlaps = np.zeros(
             (num_boxes, entry['gt_overlaps'].shape[1]),
             dtype=entry['gt_overlaps'].dtype
@@ -408,7 +433,52 @@ def _merge_proposal_boxes_into_roidb(roidb, box_list):
                 entry['box_to_gt_ind_map'].dtype, copy=False
             )
         )
-
+        
+        # for DA:
+        if cfg.TRAIN.PADA and cfg.TRAIN.DOMAIN_ADAPTATION:
+            # we pre-calcluate the weights here
+            
+            # keep_inds = np.arange(rois_per_image)
+            
+            # boxes = boxes[:rois_per_image] # already submitted as 'da_boxes'
+            maxes = maxes[:rois_per_image]
+            argmaxes = argmaxes[:rois_per_image]
+            assert (gt_classes[argmaxes][maxes > 0] != 0).all()
+            
+            class_weights = model.class_weight_db.class_weights
+            
+            # Each roi has a fg and a bg part. The portion between these parts is determined by the IoU (scores).
+            # The fg part is weighted by PADA with the corresponding class weights, and the bg part is set
+            # to be on average 75% of the total weight: w_pada * fg + bg.
+            # The bg wieghts can also be less than 75% if there are not much bg rois, because w_bg may be at most 1.0 per roi.
+            
+            pada_weights = maxes*class_weights[gt_classes[argmaxes]]
+            # pada_fg_weight = pada_weights.sum()
+            # fg_weight = maxes.sum()
+            # avg_pada_roi_weight = pada_fg_weight / (fg_weight + np.finfo(float).eps)
+            # avg_pada_roi_weight = model.class_weight_db.update_get_avg_pada_weight(avg_pada_roi_weight,fg_weight)
+            avg_pada_roi_weight = model.class_weight_db.get_avg_pada_weight()
+            bg_weights = (1 - maxes) * avg_pada_roi_weight # scale bg rois similar as average fg scale.
+            box_weights = pada_weights + bg_weights # each roi is both partially fg and bg, weighted by IoU.
+            
+            entry['pada_roi_weights'] = np.array(box_weights,dtype=np.float32)
+            
+            # print()
+            # print(sum(maxes > 0),sum(maxes > 0) / len(maxes),len(maxes))
+            # print(sum(box_weights))
+            # print(len(class_weights),class_weights.mean(),class_weights.max(),sum(class_weights > 0))
+            #
+            # im_dist = gt_overlaps.sum(axis=0)
+            # order = np.argsort(im_dist)[::-1]
+            # classes = np.array(dummy_datasets.get_coco_dataset().classes.values(),dtype=str)
+            # # print(classes)
+            # im_dist = im_dist[order]
+            # classes = classes[order]
+            # cwo = class_weights[order]
+            # for score,w,c in list(zip(im_dist,cwo,classes))[:5]:
+            #     if score != 0.0:
+            #         print("{}({:.3f}):{:.3f}".format(c,w,score))
+                
 
 def _filter_crowd_proposals(roidb, crowd_thresh):
     """Finds proposals that are inside crowd regions and marks them as

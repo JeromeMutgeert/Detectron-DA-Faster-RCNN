@@ -176,7 +176,9 @@ def build_generic_detection_model(
             # Create a net that can be used to execute the conv body on an image
             # (without also executing RPN or any other network heads)
             model.conv_body_net = model.net.Clone('conv_body_net')
-
+        
+        
+        
         head_loss_gradients = {
             'rpn': None,
             'box': None,
@@ -228,6 +230,9 @@ def build_generic_detection_model(
             head_loss_gradients['instance'], blob_feats_rois_all, dim_feats_rois_all = _add_instance_level_classifier(model, blob_conv, dim_conv, spatial_scale_conv)
             # Add consistency regularization
             head_loss_gradients['consistency'] = _add_consistency_loss(model, blob_conv, dim_conv, blob_feats_rois_all, dim_feats_rois_all)
+            
+            if cfg.TRAIN.PADA:
+                _add_pada_frcnn_head(model,blob_feats_rois_all,dim_feats_rois_all)
 
         if model.train:
             loss_gradients = {}
@@ -240,6 +245,143 @@ def build_generic_detection_model(
 
     optim.build_data_parallel_model(model, _single_gpu_build_func)
     return model
+
+
+def _add_pada_frcnn_head(model, blob_in, dim):
+    """Add RoI classification and bounding box regression output ops."""
+    
+    # take targets only
+    def mask(inputs, outputs):
+        scores = inputs[0].data
+        label_mask = inputs[1].data.astype(bool)
+        scores = scores[~label_mask, :] # selecting targets
+        outputs[0].reshape(scores.shape)
+        outputs[0].data[...] = scores
+    name = 'MaskingInput_selecting_targets'
+    blob_in = model.net.Python(f=mask)([blob_in,'da_dc_mask'], ['da_fc7_target'], name=name)
+    
+    # Box classification layer
+    model.FCShared(
+        blob_in,
+        'pada_cls',
+        dim,
+        model.num_classes,
+        weight='cls_score_w',
+        bias='cls_score_b'
+    )
+    # always softmax, we collect these predictions.
+    model.Softmax('pada_cls', 'pada_cls_pred', engine='CUDNN')
+    # Box regression layer
+    num_bbox_reg_classes = (
+        2 if cfg.MODEL.CLS_AGNOSTIC_BBOX_REG else model.num_classes
+    )
+    model.FCShared(
+        blob_in,
+        'pada_bbox_pred',
+        dim,
+        num_bbox_reg_classes * 4,
+        weight='bbox_pred_w',
+        bias='bbox_pred_b'
+    )
+    def get_target_class_weights(inputs,outputs):
+        
+        # 'rois', 'label_mask', 'im_info', 'is_source', 'cls_pred', 'bbox_pred'
+        
+        import numpy as np
+        import detectron.utils.boxes as box_utils
+        
+        rois =  inputs[0].data
+        dc_mask = inputs[1].data.astype(bool)
+        im_info = inputs[2].data
+        is_source = inputs[3].data.astype(bool)
+        cls_pred = inputs[4].data
+        bbox_pred = inputs[5].data
+        
+        this_im_info = im_info[~is_source,:][0,:]
+        im_shape = this_im_info[:2]
+        im_scale = this_im_info[2]
+        im_idx = int(this_im_info[3]) # im_info is extended with its index in the roidb.
+        
+        rois = rois[~dc_mask,:]
+        boxes = rois[:, 1:5] / im_scale
+        
+        box_deltas = bbox_pred
+        scores = cls_pred
+        
+        # if cfg.TEST.BBOX_REG:
+        #     # Apply bounding-box regression deltas
+        #     if cfg.MODEL.CLS_AGNOSTIC_BBOX_REG:
+        #         # Remove predictions for bg class (compat with MSRA code)
+        #         box_deltas = box_deltas[:, -4:]
+        
+        pred_boxes = box_utils.bbox_transform(
+            boxes, box_deltas, cfg.MODEL.BBOX_REG_WEIGHTS
+        )
+        pred_boxes = box_utils.clip_tiled_boxes(pred_boxes, im_shape)
+        
+            # if cfg.MODEL.CLS_AGNOSTIC_BBOX_REG:
+            #     pred_boxes = np.tile(pred_boxes, (1, scores.shape[1]))
+        # else:
+        #     # Simply repeat the boxes, once for each class
+        #     pred_boxes = np.tile(boxes, (1, scores.shape[1]))
+    
+        # if cfg.DEDUP_BOXES > 0 and not cfg.MODEL.FASTER_RCNN:
+        #     # Map scores and predictions back to the original set of boxes
+        #     scores = scores[inv_index, :]
+        #     pred_boxes = pred_boxes[inv_index, :]
+
+        # > scores, boxes <
+        
+        num_classes = cfg.MODEL.NUM_CLASSES
+        # Apply threshold on detection probabilities and apply NMS
+        # Skip j = 0, because it's the background class
+	
+        sum_softmax = np.zeros((num_classes,))
+    
+        for j in range(1, num_classes):
+            inds = np.where(scores[:, j] > cfg.TEST.SCORE_THRESH)[0]
+            scores_j = scores[inds, j]
+            boxes_j = pred_boxes[inds, j * 4:(j + 1) * 4]
+            dets_j = np.hstack((boxes_j, scores_j[:, np.newaxis])).astype(
+                np.float32, copy=False
+            )
+            
+            # if cfg.TEST.SOFT_NMS.ENABLED:
+            #     nms_dets, _ = box_utils.soft_nms(
+            #         dets_j,
+            #         sigma=cfg.TEST.SOFT_NMS.SIGMA,
+            #         overlap_thresh=cfg.TEST.NMS,
+            #         score_thresh=0.0001,
+            #         method=cfg.TEST.SOFT_NMS.METHOD
+            #     )
+            # else:
+            
+            keep = box_utils.nms(dets_j, cfg.TEST.NMS)
+            nms_dets = dets_j[keep, :]
+            
+            # # Refine the post-NMS boxes using bounding-box voting
+            # if cfg.TEST.BBOX_VOTE.ENABLED:
+            #     nms_dets = box_utils.box_voting(
+            #         nms_dets,
+            #         dets_j,
+            #         cfg.TEST.BBOX_VOTE.VOTE_TH,
+            #         scoring_method=cfg.TEST.BBOX_VOTE.SCORING_METHOD
+            #     )
+            sum_softmax[j] = nms_dets[:,-1].sum()
+        
+        
+        model.class_weight_db.update_class_weights(im_idx,sum_softmax)
+        
+        # print('.',end='')
+        
+        # # return statement:
+        # outputs[0].reshape(sum_softmax.shape)
+        # outputs[0].data[...] = sum_softmax
+        
+        
+    model.net.Python(f=get_target_class_weights)(
+        ['da_rois', 'da_dc_mask', 'im_info', 'is_source', 'pada_cls_pred', 'pada_bbox_pred'],
+        [], name='get_target_class_weights')
 
 def _add_image_level_classifier(model, blob_in, dim_in, spatial_scale_in):
     from detectron.utils.c2 import const_fill
@@ -284,13 +426,13 @@ def _add_instance_level_classifier(model, blob_in, dim_in, spatial_scale):
     from detectron.utils.c2 import const_fill
     from detectron.utils.c2 import gauss_fill
 
-    def negateGrad(inputs, outputs):
-        outputs[0].feed(inputs[0].data)
-    def grad_negateGrad(inputs, outputs):
-        scale = cfg.TRAIN.DA_INS_GRL_WEIGHT
-        grad_output = inputs[-1]
-        outputs[0].reshape(grad_output.shape)
-        outputs[0].data[...] = -1.0*scale*grad_output.data
+    # def negateGrad(inputs, outputs):
+    #     outputs[0].feed(inputs[0].data)
+    # def grad_negateGrad(inputs, outputs):
+    #     scale = cfg.TRAIN.DA_INS_GRL_WEIGHT
+    #     grad_output = inputs[-1]
+    #     outputs[0].reshape(grad_output.shape)
+    #     outputs[0].data[...] = -1.0*scale*grad_output.data
     model.RoIFeatureTransform(
         blob_in,
         'da_pool5',
@@ -319,6 +461,10 @@ def _add_instance_level_classifier(model, blob_in, dim_in, spatial_scale):
 
     dc_ip3 = model.FC('dc_drop_2', 'dc_ip3', 1024, 1,
                       weight_init=gauss_fill(0.05), bias_init=const_fill(0.0))
+    
+    if cfg.TRAIN.PADA:
+        dc_ip3 = model.PADAbyGradientWeightingLayerD(dc_ip3,'pada_dc_ip3','pada_roi_weights')
+    
     loss_gradient = None
     if model.train:
         dc_loss = model.net.SigmoidCrossEntropyLoss(
@@ -337,7 +483,7 @@ def _add_consistency_loss(model, blob_img_in, img_dim_in, blob_ins_in, ins_dim_i
     # Fix instatiated by replacing the ins_probs input by the rois input, containing the batch indices.
     def expand_as(inputs, outputs):
         img_prob = inputs[0].data
-        rois = inputs[1].data
+        rois = inputs[1].data  # da_rois
         import numpy as np
         mean_da_conv = np.mean(img_prob, (1,2,3))
         # repeated_da_conv = np.expand_dims(np.repeat(
@@ -398,9 +544,13 @@ def _add_consistency_loss(model, blob_img_in, img_dim_in, blob_ins_in, ins_dim_i
           weight='dc_ip2_w', bias='dc_ip2_b')
     model.Relu('dc_ip2_copy', 'dc_relu_2_copy')
 
-    model.FCShared('dc_relu_2_copy', 'dc_ip3_copy', 1024, 1,
+    dc_ip3_copy = model.FCShared('dc_relu_2_copy', 'dc_ip3_copy', 1024, 1,
                    weight='dc_ip3_w', bias='dc_ip3_b')
-    model.net.Sigmoid('dc_ip3_copy', "ins_probs")
+    
+    if cfg.TRAIN.PADA:
+         dc_ip3_copy = model.PADAbyGradientWeightingLayerD(dc_ip3_copy,'pada_dc_ip3_copy','pada_roi_weights')
+    
+    model.net.Sigmoid(dc_ip3_copy, "ins_probs")
     loss_gradient = None
     if model.train:
         model.net.Python(f=expand_as, grad_f=grad_expand_as, grad_input_indices=[0], grad_output_indices=[0])(

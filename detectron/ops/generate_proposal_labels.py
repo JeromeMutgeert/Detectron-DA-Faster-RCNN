@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 class GenerateProposalLabelsOp(object):
 
+    def __init__(self,model):
+        self.model = model
+
     def forward(self, inputs, outputs):
         """See modeling.detector.GenerateProposalLabels for inputs/outputs
         documentation.
@@ -46,7 +49,10 @@ class GenerateProposalLabelsOp(object):
         # implementation we are *not* filtering crowd proposals.
         # This choice should be investigated in the future (it likely does
         # not matter).
-        json_dataset.add_proposals(roidb, rois, im_scales, crowd_thresh=0)
+        json_dataset.add_proposals(roidb, rois, im_scales, crowd_thresh=0,model=self.model)
+        
+        # print('pada_dc_source_weights:',sum(entry['pada_roi_weights'].sum() for entry in roidb if entry['is_source']))
+        
         roidb_utils.add_bbox_regression_targets(roidb)
         blobs = {k: [] for k in output_blob_names}
         fast_rcnn_roi_data.add_fast_rcnn_blobs(blobs, im_scales, roidb)

@@ -104,18 +104,29 @@ def add_single_gpu_param_update_ops(model, gpu_id):
         [], 'wd_gn', shape=[1], value=cfg.SOLVER.WEIGHT_DECAY_GN
     )
     for param in model.TrainableParams(gpu_id=gpu_id):
-        logger.debug('param ' + str(param) + ' will be updated')
+        logger.info('param ' + str(param) + ' will be updated')
         param_grad = model.param_to_grad[param]
         # Initialize momentum vector
         param_momentum = model.param_init_net.ConstantFill(
             [param], param + '_momentum', value=0.0
         )
+        
+        # PADA also adds x10 lr_mult on the added adversarial layers that are trained from scratch.
+        DA_params = ['gpu_0/dc_ip{}'.format(n) for n in [1,2,3]] + ['gpu_0/da_conv_{}'.format(n) for n in [1,2]]
+        
         if param in model.biases:
             # Special treatment for biases (mainly to match historical impl.
             # details):
             # (1) Do not apply weight decay
             # (2) Use a 2x higher learning rate
-            model.Scale(param_grad, param_grad, scale=2.0)
+            scale = 2.0
+            if cfg.TRAIN.DA_LR_MULT != 1 and param in [blob + '_b' for blob in DA_params]:
+                    scale *= cfg.TRAIN.DA_LR_MULT
+            model.Scale(param_grad, param_grad, scale=scale)
+        
+        if cfg.TRAIN.DA_LR_MULT != 1 and param in [blob + '_w' for blob in DA_params]:
+            model.Scale(param_grad, param_grad, scale=float(cfg.TRAIN.DA_LR_MULT))
+            
         elif param in model.gn_params:
             # Special treatment for GroupNorm's parameters
             model.WeightedSum([param_grad, one, param, wd_gn], param_grad)

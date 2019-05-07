@@ -582,6 +582,11 @@ __C.TEST.COCO_TO_VOC = False
 # When '' no subset is used:
 __C.VOC_SUBSET = ''
 
+# Partial Adversarial Domain Adaptation: PADA:
+__C.TRAIN.PADA = False
+__C.TRAIN.DA_FADE_IN = False
+__C.TRAIN.DA_LR_MULT = 1
+
 # ---------------------------------------------------------------------------- #
 # Solver options
 # Note: all solver options are used exactly as specified; the implication is

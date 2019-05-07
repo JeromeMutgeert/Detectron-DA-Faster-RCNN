@@ -91,7 +91,8 @@ def add_rpn_blobs(blobs, im_scales, roidb):
             (entry['gt_classes'] > 0) & (entry['is_crowd'] == 0)
         )[0]
         gt_rois = entry['boxes'][gt_inds, :] * scale
-        im_info = np.array([[im_height, im_width, scale]], dtype=np.float32)
+        im_idx = entry['im_idx'] if 'im_idx' in entry else -1
+        im_info = np.array([[im_height, im_width, scale, im_idx]], dtype=np.float32)
         blobs['im_info'].append(im_info)
 
         if cfg.TRAIN.DOMAIN_ADAPTATION: 

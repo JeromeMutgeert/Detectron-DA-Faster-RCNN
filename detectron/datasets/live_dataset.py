@@ -176,6 +176,15 @@ class LiveRoidb(list):
         return gen(self)
 
 
+ids_file = TARGET_DATA_PATH.format('ids.txt')
+
+idx2id = []
+with open(ids_file,'r') as f:
+    idx2id = [i.strip() for i in f.readlines()]
+    
+id2idx = {id:i for i,id in enumerate(idx2id)}
+
+
 def dl_by_id(im_id):
     import urllib2
     import cv2

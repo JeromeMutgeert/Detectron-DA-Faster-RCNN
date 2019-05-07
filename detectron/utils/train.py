@@ -43,6 +43,7 @@ from detectron.core.config import cfg
 from detectron.core.config import get_output_dir
 from detectron.datasets.roidb import combined_roidb_for_training
 from detectron.modeling import model_builder
+import detectron.modeling.PADA as pada
 from detectron.utils import lr_policy
 from detectron.utils.training_stats import TrainingStats
 import detectron.utils.env as envu
@@ -61,6 +62,13 @@ def train_model():
     setup_model_for_training(model, weights_file, output_dir)
     training_stats = TrainingStats(model)
     CHECKPOINT_PERIOD = int(cfg.TRAIN.SNAPSHOT_ITERS / cfg.NUM_GPUS)
+    
+    if model.train and cfg.TRAIN.PADA:
+        if not hasattr(model,'class_weight_db'):
+            model.class_weight_db = pada.ClassWeightDB()
+        model.class_weight_db.setup(model.roi_data_loader)
+    if cfg.TRAIN.DA_FADE_IN:
+        model.da_fade_in = pada.DAScaleFading(cfg.SOLVER.MAX_ITER)
     
     # if cfg.INTERRUPTING:
     #     source_set_size = len(model.roi_data_loader._roidb)
@@ -268,8 +276,13 @@ def add_model_da_training_inputs(model):
     target_roidb = combined_roidb_for_training(
         cfg.TRAIN.TARGET_DATASETS, cfg.TRAIN.TARGET_PROPOSAL_FILES, False
     )
+    if cfg.TRAIN.PADA:
+        # add indices for the target images for updating their class weights
+        for i,rois in enumerate(target_roidb):
+            rois['im_idx'] = i
+            
     logger.info('{:d} target roidb entries'.format(len(target_roidb)))
-    roidb = source_roidb+target_roidb
+    # roidb = source_roidb+target_roidb
     model_builder.add_training_inputs(model, source_roidb=source_roidb, target_roidb=target_roidb)
 
 def dump_proto_files(model, output_dir):

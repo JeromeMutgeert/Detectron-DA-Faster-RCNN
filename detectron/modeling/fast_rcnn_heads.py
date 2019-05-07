@@ -45,6 +45,7 @@ import detectron.utils.blob as blob_utils
 
 def add_fast_rcnn_outputs(model, blob_in, dim):
     """Add RoI classification and bounding box regression output ops."""
+    
     # Box classification layer
     model.FC(
         blob_in,
@@ -54,6 +55,10 @@ def add_fast_rcnn_outputs(model, blob_in, dim):
         weight_init=gauss_fill(0.01),
         bias_init=const_fill(0.0)
     )
+    
+    if model.train and cfg.TRAIN.PADA:
+        model.PADAbyGradientWeightingLayer('cls_score','cls_score','source_labels_int32')
+    
     if not model.train:  # == if test
         # Only add softmax when testing; during training the softmax is combined
         # with the label cross entropy loss for numerical stability
@@ -62,6 +67,12 @@ def add_fast_rcnn_outputs(model, blob_in, dim):
     num_bbox_reg_classes = (
         2 if cfg.MODEL.CLS_AGNOSTIC_BBOX_REG else model.num_classes
     )
+    
+    if model.train and cfg.TRAIN.PADA and not cfg.MODEL.CLS_AGNOSTIC_BBOX_REG:
+        # The class-specific bbox predictors are independant of each other, so no pada weighting needed for this last layer.
+        blob_in = model.PADAbyGradientWeightingLayer(blob_in, 'pada_weighted_feats', 'source_labels_int32')
+        # blob_in = blob_weighted
+        
     model.FC(
         blob_in,
         'bbox_pred',
@@ -77,8 +88,11 @@ def add_fast_rcnn_losses(model):
     if cfg.TRAIN.DOMAIN_ADAPTATION:
         model.MaskingInput(['cls_score', 'label_mask'], ['source_cls_score'])
         model.MaskingInput(['bbox_pred', 'label_mask'], ['source_bbox_pred'])
-
-        cls_prob, loss_cls = model.net.SoftmaxWithLoss(
+        
+        if cfg.TRAIN.PADA:
+            pass
+        
+        cls_prob, loss_cls = model.net.SoftmaxWithLoss( # add a third input if PADA, the weights:
             ['source_cls_score', 'source_labels_int32'], ['cls_prob', 'loss_cls'],
             scale=model.GetLossScale()
         )

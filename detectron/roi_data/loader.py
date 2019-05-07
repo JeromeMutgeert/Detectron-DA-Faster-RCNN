@@ -75,9 +75,9 @@ class RoIDataLoader(object):
         self._roidb = source_roidb
         self._target_roidb = target_roidb
         self._lock = threading.Lock()
-        self._perm = deque(range(len(self._roidb)))
+        self._perm = deque(np.random.permutation(len(self._roidb)))
         if target_roidb != None:
-            self._target_perm = deque(range(len(self._target_roidb)))
+            self._target_perm = deque(np.random.permutation(len(self._target_roidb)))
         self._cur = 0  # _perm cursor
         self._target_cur = 0  # _target_perm cursor
         # The minibatch queue holds prepared training data in host (CPU) memory
@@ -155,7 +155,7 @@ class RoIDataLoader(object):
             vert_inds = np.random.permutation(vert_inds)
             mb = cfg.TRAIN.IMS_PER_BATCH
             if self._target_roidb != None:
-                mb = cfg.TRAIN.IMS_PER_BATCH//2
+                mb = cfg.TRAIN.IMS_PER_BATCH-cfg.TRAIN.IMS_PER_BATCH//2
             horz_inds = horz_inds[:(len(horz_inds) // mb) * mb]
             vert_inds = vert_inds[:(len(vert_inds) // mb) * mb]
             inds = np.hstack((horz_inds, vert_inds))
@@ -181,7 +181,7 @@ class RoIDataLoader(object):
 
             horz_inds = np.random.permutation(horz_inds)
             vert_inds = np.random.permutation(vert_inds)
-            mb = cfg.TRAIN.IMS_PER_BATCH-cfg.TRAIN.IMS_PER_BATCH//2
+            mb = cfg.TRAIN.IMS_PER_BATCH//2
             horz_inds = horz_inds[:(len(horz_inds) // mb) * mb]
             vert_inds = vert_inds[:(len(vert_inds) // mb) * mb]
             inds = np.hstack((horz_inds, vert_inds))
@@ -212,15 +212,14 @@ class RoIDataLoader(object):
                     self._shuffle_roidb_inds()
                 db_target_inds = None
             else:
-                db_inds = [self._perm[i]
-                           for i in range(cfg.TRAIN.IMS_PER_BATCH//2)]
-                db_target_inds = [self._target_perm[i] for i in range(
+                db_inds = [self._perm[i] for i in range(
                     cfg.TRAIN.IMS_PER_BATCH-cfg.TRAIN.IMS_PER_BATCH//2)]
-                self._perm.rotate(-cfg.TRAIN.IMS_PER_BATCH//2)
-                self._target_perm.rotate(-cfg.TRAIN.IMS_PER_BATCH +
-                                         cfg.TRAIN.IMS_PER_BATCH//2)
-                self._cur += cfg.TRAIN.IMS_PER_BATCH//2
-                self._target_cur += cfg.TRAIN.IMS_PER_BATCH-cfg.TRAIN.IMS_PER_BATCH//2
+                db_target_inds = [self._target_perm[i]
+                           for i in range(cfg.TRAIN.IMS_PER_BATCH//2)]
+                self._perm.rotate(-len(db_inds))
+                self._target_perm.rotate(-len(db_target_inds))
+                self._cur += len(db_inds)
+                self._target_cur += len(db_target_inds)
                 if self._cur >= len(self._perm):
                     self._shuffle_roidb_inds()
                 if self._target_cur >= len(self._target_perm):
@@ -237,7 +236,7 @@ class RoIDataLoader(object):
         if self._target_roidb == None:
             ims_per_batch = cfg.TRAIN.IMS_PER_BATCH
         else:
-            ims_per_batch = cfg.TRAIN.IMS_PER_BATCH//2
+            ims_per_batch = cfg.TRAIN.IMS_PER_BATCH-cfg.TRAIN.IMS_PER_BATCH//2
         
         batches_per_roidb = (len(self._roidb) + ims_per_batch - 1)//ims_per_batch
         

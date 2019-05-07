@@ -348,7 +348,7 @@ def test_net(
             
             if cfg.TEST.COLLECT_ALL:
                 all_class_weights[i] = sum_softmax
-                all_feats.append(topk_feats) # will accumulate about 2 Gb of feats on COCO train set (118K imgs)
+                all_feats.append(topk_feats) # will accumulate about 9 Gb of feats on COCO train set (118K imgs)
             
             if i % 10 == 0:  # Reduce log file size
                 ave_total_time = np.sum([t.average_time for t in timers.values()])

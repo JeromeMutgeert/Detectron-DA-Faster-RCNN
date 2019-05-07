@@ -81,6 +81,7 @@ class TrainingStats(object):
         self.smoothed_mb_qsize.AddValue(
             self.model.roi_data_loader._minibatch_queue.qsize()
         )
+        
 
     def LogIterStats(self, cur_iter, lr):
         """Log the tracked statistics."""
@@ -105,8 +106,16 @@ class TrainingStats(object):
             mb_qsize=int(
                 np.round(self.smoothed_mb_qsize.GetMedianValue())
             ),
-            mem=int(np.ceil(mem_usage / 1024 / 1024))
+            mem=int(np.ceil(mem_usage / 1024 / 1024)),
         )
+        if cfg.TRAIN.DA_FADE_IN:
+            stats['da_weight'] = self.model.da_fade_in.get_weight()
+        if cfg.TRAIN.PADA:
+            stats['avg_pada_weight'] = self.model.class_weight_db.get_avg_pada_weight()
+            stats['total_detects'] = self.model.class_weight_db.total_sum_softmax.sum() / 2
+            stats['KL_div'] = self.model.class_weight_db.get_KL_to_init()
         for k, v in self.smoothed_losses_and_metrics.items():
             stats[k] = v.GetMedianValue()
+        # for k,v in stats.items():
+        #     print(k,v)
         return stats

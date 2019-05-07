@@ -110,7 +110,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def plt_bars(counts,labels,counts2=None,reversed=True,ax=None,eps=np.finfo(float).eps,figsize=(30,20),**kwargs):
+def plt_bars(counts,labels,counts2=None,reversed=True,ax=None,eps=np.finfo(float).eps,figsize=(30,20),log=None,**kwargs):
     if ax is None:
         fig,ax = plt.subplots(figsize=figsize)
     order = counts.argsort()
@@ -125,7 +125,22 @@ def plt_bars(counts,labels,counts2=None,reversed=True,ax=None,eps=np.finfo(float
     if counts2 is not None:
         ax.bar(x,counts2[order],alpha=.4,**kwargs)
     plt.xticks(x,labels[order],rotation=90)
-    # ax.set_yscale('log')
+    if log:
+        ax.set_yscale('log')
+    
+coco_classes = np.array(get_coco_dataset().classes.values(),dtype=str)
+def plot_dists(coco_dist, yisual_dist, source_name,target_name):
+    plt_bars(coco_dist,coco_classes,yisual_dist)
+    plt.title('Class distributions of detections: KL( {} || {} ) = {} )'.format(target_name,source_name,KL_div(yisual_dist,coco_dist)))
+    plt.legend([source_name,target_name])
+    plt.show()
+
+def plot_dist(coco_dist,name=None,log=None):
+    plt_bars(coco_dist,coco_classes,log=log)
+    if name is not None:
+        plt.legend([name])
+    plt.show()
+    
 
 def KL_div(target,source,eps=np.finfo(float).eps):
     # We take KL(target||source), the distance of the source distribution from the pespective of the target distribution.
@@ -164,12 +179,7 @@ if __name__ == '__main__':
     assert args.class_weights is not None, 'class_weights file required'
     print(str(args.class_weights[0]))
     
-    coco_classes = np.array(get_coco_dataset().classes.values(),dtype=str)
-    def plot_dists(coco_dist, yisual_dist, source_name,target_name):
-        plt_bars(coco_dist,coco_classes,yisual_dist)
-        plt.title('Class distributions of detections: KL( {} || {} ) = {} )'.format(target_name,source_name,KL_div(yisual_dist,coco_dist)))
-        plt.legend([source_name,target_name])
-        plt.show()
+    
     
     
     coco_wts = load_object(args.class_weights[0])
@@ -251,7 +261,7 @@ if __name__ == '__main__':
     # normalise per-image:
     im_weights = voc_wts.sum(axis=1)
     total_weight = im_weights.sum()
-    min_weight = .55 * total_weight
+    min_weight = .05 * total_weight
     im_dists = voc_wts / im_weights[:, None]
     
     # scores = [ KL_div(yisual_dist,im_dist) - KL_div(im_dist,coco_dist) for im_dist in im_dists] #

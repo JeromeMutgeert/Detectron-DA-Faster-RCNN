@@ -111,6 +111,11 @@ def get_fast_rcnn_blob_names(is_training=True):
         blob_names += ['source_bbox_inside_weights']
         blob_names += ['source_bbox_outside_weights']
         blob_names += ['da_label_wide']
+        
+        if cfg.TRAIN.PADA:
+            blob_names += ['pada_roi_weights']
+            blob_names += ['da_dc_mask']
+        
     return blob_names
 
 
@@ -125,9 +130,10 @@ def add_fast_rcnn_blobs(blobs, im_scales, roidb):
     #     print('rois per img pruned to', min_rois_per_img)
     
     for im_i, entry in enumerate(roidb):
-        frcn_blobs = _sample_rois(entry, im_scales[im_i], im_i)#, max_rois=min_rois_per_img)
-        for k, v in frcn_blobs.items():
-            blobs[k].append(v)
+        if True or (cfg.TRAIN.DOMAIN_ADAPTATION and entry['is_source']) or not cfg.TRAIN.DOMAIN_ADAPTATION:
+            frcn_blobs = _sample_rois(entry, im_scales[im_i], im_i)#, max_rois=min_rois_per_img)
+            for k, v in frcn_blobs.items():
+                blobs[k].append(v)
         
         if cfg.TRAIN.DOMAIN_ADAPTATION:
             da_blobs = _sample_da_rois(entry, im_scales[im_i], im_i)
@@ -192,7 +198,6 @@ def _sample_rois(roidb, im_scale, batch_idx): #max_rois = int(cfg.TRAIN.BATCH_SI
     sampled_labels = roidb['max_classes'][keep_inds]
     sampled_labels[fg_rois_per_this_image:] = 0  # Label bg RoIs with class 0
     sampled_boxes = roidb['boxes'][keep_inds]
-
     bbox_targets, bbox_inside_weights = _expand_bbox_targets(
         roidb['bbox_targets'][keep_inds, :]
     )
@@ -244,21 +249,27 @@ def _sample_rois(roidb, im_scale, batch_idx): #max_rois = int(cfg.TRAIN.BATCH_SI
 def _sample_da_rois(roidb, im_scale, batch_idx):
     """Generate a random sample of RoIs for domain adaptation.
     """
-    max_overlaps = roidb['max_overlaps']
-    rois_per_image = min(max_overlaps.shape[0], int(cfg.TRAIN.BATCH_SIZE_PER_IM))
+    # max_overlaps = roidb['max_overlaps']
+    da_boxes = roidb['da_boxes']
+    rois_per_image = min(da_boxes.shape[0], int(cfg.TRAIN.BATCH_SIZE_PER_IM))
 
     # The indices that we're selecting (both fg and bg)
     # keep_inds = np.append(fg_inds, bg_inds)
-    keep_inds = npr.choice(range(max_overlaps.shape[0]), size=rois_per_image, replace=False)
+    
+    # keep_inds = npr.choice(range(max_overlaps.shape[0]), size=rois_per_image, replace=False)
+    keep_inds = np.arange(rois_per_image) # take top k, they are ordered by rpn_prob.
+    
+    
     # keep_inds = np.arange(max_overlaps.shape[0])
     # Label is the class each RoI has max overlap with
-    sampled_labels = roidb['max_classes'][keep_inds]
+    # sampled_labels = roidb['max_classes'][keep_inds]
     # sampled_labels[fg_rois_per_image:] = 0  # Label bg RoIs with class 0
-    sampled_boxes = roidb['boxes'][keep_inds]
+    # sampled_boxes = roidb['boxes'][keep_inds]
+    # sampled_boxes = da_boxes[keep_inds,:]
 
 
     # Scale rois and format as (batch_idx, x1, y1, x2, y2)
-    sampled_rois = sampled_boxes * im_scale
+    sampled_rois = da_boxes * im_scale
     repeated_batch_idx = batch_idx * blob_utils.ones((sampled_rois.shape[0], 1))
     sampled_rois = np.hstack((repeated_batch_idx, sampled_rois))
 
@@ -267,12 +278,16 @@ def _sample_da_rois(roidb, im_scale, batch_idx):
         da_rois=sampled_rois
     )
     
-    # optionally add Domain Adaptive R-CNN blobs
+    # add Domain Adaptive R-CNN blobs
     if roidb['is_source']:
-        blob_dict['dc_label'] = np.expand_dims(np.ones(sampled_labels.shape, dtype=np.int32), axis=1)
+        blob_dict['dc_label'] = np.expand_dims(np.ones(rois_per_image, dtype=np.int32), axis=1)
     else:
-        blob_dict['dc_label'] = np.expand_dims(np.zeros(sampled_labels.shape, dtype=np.int32), axis=1)
-
+        blob_dict['dc_label'] = np.expand_dims(np.zeros(rois_per_image, dtype=np.int32), axis=1)
+    
+    if cfg.TRAIN.PADA:
+        blob_dict['pada_roi_weights'] = roidb['pada_roi_weights']
+        blob_dict['da_dc_mask'] = np.full(rois_per_image,roidb['is_source'].astype(bool))
+    
     return blob_dict
 
 def _expand_bbox_targets(bbox_target_data):

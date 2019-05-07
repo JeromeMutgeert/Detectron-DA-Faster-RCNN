@@ -80,7 +80,7 @@ def combined_roidb_for_training(dataset_names, proposal_files, is_source=True):
         return roidb
     
     if cfg.VOC_SUBSET != '' and dataset_names == ('voc_2007_train','voc_2007_val','voc_2012_train'):
-        subset_pointer = get_roidb #any dummy object could be used that is more advanced than 'object()' or similar builtins.
+        subset_pointer = get_roidb #any dummy object could be used, but not 'object()' or similar builtins; too primitive.
         subset_pointer.subset = np.load(cfg.VOC_SUBSET)
     else:
         subset_pointer = None
@@ -102,7 +102,7 @@ def combined_roidb_for_training(dataset_names, proposal_files, is_source=True):
     logger.info('Computing bounding-box regression targets...')
     add_bbox_regression_targets(roidb)
     logger.info('done')
-
+    
     _compute_and_log_stats(roidb)
 
     return roidb
@@ -125,7 +125,7 @@ def extend_with_flipped_entries(roidb, dataset):
         boxes[:, 2] = width - oldx1 - 1
         assert (boxes[:, 2] >= boxes[:, 0]).all()
         flipped_entry = {}
-        dont_copy = ('boxes', 'segms', 'gt_keypoints', 'flipped')
+        dont_copy = ('boxes', 'segms', 'gt_keypoints', 'flipped','sum_softmax')
         for k, v in entry.items():
             if k not in dont_copy:
                 flipped_entry[k] = v
@@ -139,6 +139,9 @@ def extend_with_flipped_entries(roidb, dataset):
                 entry['gt_keypoints'], entry['width']
             )
         flipped_entry['flipped'] = True
+        if 'sum_softmax' in entry:
+            flipped_entry['sum_softmax'] = np.zeros_like(entry['sum_softmax'])
+            # flipped_entry['sum_softmax'] = entry['sum_softmax'].copy()
         flipped_roidb.append(flipped_entry)
     roidb.extend(flipped_roidb)
 
@@ -179,6 +182,11 @@ def add_bbox_regression_targets(roidb):
 
 def compute_bbox_regression_targets(entry):
     """Compute bounding-box regression targets for an image."""
+    
+    # if cfg.TRAIN.DOMAIN_ADAPTATION:
+    #     if not entry['is_source']:
+    #         return []
+    
     # Indices of ground-truth ROIs
     rois = entry['boxes']
     overlaps = entry['max_overlaps']
@@ -192,7 +200,11 @@ def compute_bbox_regression_targets(entry):
 
     # Indices of examples for which we try to make predictions
     ex_inds = np.where(overlaps >= cfg.TRAIN.BBOX_THRESH)[0]
-
+    
+    
+    # if 'gt_overlaps' in entry:
+    #     ex_gt_overlaps = entry['gt_overlaps'][ex_inds]
+    # else:
     # Get IoU overlap between each ex ROI and gt ROI
     ex_gt_overlaps = box_utils.bbox_overlaps(
         rois[ex_inds, :].astype(dtype=np.float32, copy=False),

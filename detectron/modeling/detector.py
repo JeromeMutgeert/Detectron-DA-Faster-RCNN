@@ -165,7 +165,7 @@ class DetectionModelHelper(cnn.CNNModelHelper):
         )
         blobs_out = [core.ScopedBlobReference(b) for b in blobs_out]
 
-        self.net.Python(GenerateProposalLabelsOp().forward)(
+        self.net.Python(GenerateProposalLabelsOp(self).forward)(
             blobs_in, blobs_out, name=name
         )
         return blobs_out
@@ -375,6 +375,7 @@ class DetectionModelHelper(cnn.CNNModelHelper):
             **kwargs
         )
     
+    
     def MaskingInput(self, blobs_in, blob_out, needs_int32_init=False):
         """
         mask input according to the argument mask, implemented for domain adaptation component
@@ -408,6 +409,7 @@ class DetectionModelHelper(cnn.CNNModelHelper):
 
         return output
     
+    
     def GradientScalerLayer(self, blob_in, blob_out, scale):
         def gradScale(inputs, outputs):
             outputs[0].feed(inputs[0].data)
@@ -415,14 +417,72 @@ class DetectionModelHelper(cnn.CNNModelHelper):
             grad_output = inputs[-1]
             outputs[0].reshape(grad_output.shape)
             outputs[0].data[...] = scale*grad_output.data
+        if cfg.TRAIN.DA_FADE_IN:
+            def grad_gradScale_fade(inputs, outputs):
+                grad_output = inputs[-1]
+                outputs[0].reshape(grad_output.shape)
+                outputs[0].data[...] = self.da_fade_in.get_weight()*scale*grad_output.data
+            grad_gradScale = grad_gradScale_fade
+            
         name = 'GradientScalerLayer:' + ','.join(
             [str(b) for b in blob_in]
         ) + ' with scale ' + str(scale)
 
         output = self.net.Python(f=gradScale, grad_f=grad_gradScale, grad_input_indices=[0], grad_output_indices=[0])(blob_in, blob_out, name=name)
+        
+        return output
+    
+    # created by Jerome:
+    def PADAbyGradientWeightingLayer(self,blob_in,blob_out,label_blob):
+        
+        name = '{}->{} (PADAbyGradientWeightingLayer)'.format(str(blob_in),str(blob_out))
+        
+        def gradScale(inputs, outputs):
+            # print('Running:',name)
+            outputs[0].feed(inputs[0].data)
+        def grad_gradScale(inputs, outputs):
+            labels = inputs[1].data.astype(int)
+            label_mask = inputs[2].data.astype(bool)
+            grad_output = inputs[-1]
+
+            class_weights = self.class_weight_db.class_weights
+            bg_weight = self.class_weight_db.get_avg_pada_weight()
+            class_weights[0] = bg_weight
+
+            weighting = np.zeros(grad_output.shape[0],dtype=np.float32)
+            weighting[label_mask] = class_weights[labels]
+            for _ in range(len(grad_output.shape) - 1):
+                weighting = weighting[...,None] # add dim for each non-batch dimension.
+            outputs[0].reshape(grad_output.shape)
+            outputs[0].data[...] = weighting*grad_output.data
+
+        output = self.net.Python(f=gradScale, grad_f=grad_gradScale, grad_input_indices=[0], grad_output_indices=[0])([blob_in,label_blob,'label_mask'], [blob_out], name=name)
 
         return output
+        
+    
+    # created by Jerome:
+    def PADAbyGradientWeightingLayerD(self,blob_in,blob_out,weights_blob):
+        
+        name = '{}-{}>{} (PADAbyGWL)'.format(str(blob_in),str(weights_blob),str(blob_out))
+        
+        def gradScale(inputs, outputs):
+            # print('Running:',name)
+            outputs[0].feed(inputs[0].data)
+        def grad_gradScale(inputs, outputs):
+            grad_output = inputs[-1]
+            weighting = inputs[1].data
+            # weighting = np.ones(grad_output.shape[0],dtype=np.float32)
+            for _ in range(len(grad_output.shape) - 1):
+                weighting = weighting[...,None] # add dim for each non-batch dimension.
+            outputs[0].reshape(grad_output.shape)
+            outputs[0].data[...] = weighting*grad_output.data
 
+        output = self.net.Python(f=gradScale, grad_f=grad_gradScale, grad_input_indices=[0], grad_output_indices=[0])([blob_in,weights_blob], [blob_out], name=name)
+
+        return output
+    
+    
     def BilinearInterpolation(
         self, blob_in, blob_out, dim_in, dim_out, up_scale
     ):
@@ -566,6 +626,11 @@ class DetectionModelHelper(cnn.CNNModelHelper):
                     'Changing learning rate {:.6f} -> {:.6f} at iter {:d}'.
                     format(cur_lr, new_lr, cur_iter))
             self._SetNewLr(cur_lr, new_lr)
+            
+        
+        if cfg.TRAIN.DA_FADE_IN:
+            self.da_fade_in.set_iter(cur_iter)
+            
         return new_lr
 
     def _SetNewLr(self, cur_lr, new_lr):

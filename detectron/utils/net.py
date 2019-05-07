@@ -128,7 +128,13 @@ def initialize_gpu_from_weights_file(model, weights_file, gpu_id=0):
         del src_blobs['roidb_state']
     else:
         logger.info("roidb state not loaded")
-
+    
+    if cfg.TRAIN.PADA:
+        if 'weight_db' in src_blobs:
+            import detectron.modeling.PADA as pada
+            model.class_weight_db = pada.ClassWeightDB(src_blobs['weight_db'])
+            del src_blobs['weight_db']
+    
     # We preserve blobs that are in the weights file but not used by the current
     # model. We load these into CPU memory under the '__preserve__/' namescope.
     # These blobs will be stored when saving a model to a weights file. This
@@ -183,6 +189,10 @@ def save_model_to_weights_file(weights_file, model,cur_iter=None):
         blobs['roidb_state'] = model.roi_data_loader.get_perm_state(cur_iter + 1) # give iters_done.
     else:
         logger.info("roidb state not stored")
+    
+    if cfg.TRAIN.PADA:
+        if 'weight_db' not in blobs:
+            blobs['weight_db'] = model.class_weight_db.get_state()
     
     cfg_yaml = envu.yaml_dump(cfg)
     save_object(dict(blobs=blobs, cfg=cfg_yaml), weights_file)
