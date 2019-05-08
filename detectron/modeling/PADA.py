@@ -68,7 +68,7 @@ class ClassWeightDB(object):
     def update_class_weights(self,im_idx,sum_softmax):
         prev_sum_softmax = self.weight_db[im_idx].copy()
         self.weight_db[im_idx] = sum_softmax
-        # print('NormalizedMeanSquaredUpdate:',((prev_sum_softmax - sum_softmax)**2).mean()/prev_sum_softmax.sum(),prev_sum_softmax.sum(),sum_softmax.sum(),im_idx)
+        print('NormalizedMeanSquaredUpdate:',((prev_sum_softmax - sum_softmax)**2).mean()/prev_sum_softmax.sum(),prev_sum_softmax.sum(),sum_softmax.sum(),im_idx)
         self.total_sum_softmax += sum_softmax - prev_sum_softmax
         self.class_weights = self.total_sum_softmax / self.gt_ins_dist
         self.class_weights /= self.class_weights.max()
@@ -79,7 +79,7 @@ class ClassWeightDB(object):
         # return self.avg_pada_stats.update_and_get(observed_fg_weight,weight=count)
     
     def get_avg_pada_weight(self):
-        return self.avg_pada_weight
+        return self.avg_pada_weigh
         # return self.avg_pada_stats.get()
     
     def get_dist(self):

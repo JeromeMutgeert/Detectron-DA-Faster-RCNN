@@ -373,7 +373,7 @@ def _merge_proposal_boxes_into_roidb(roidb, box_list,model=None):
                 source_imgs = ims-ims//2; target_imgs = ims//2
                 weight *= source_imgs/target_imgs
                 entry['pada_roi_weights'] = np.full(rois_per_image,weight,dtype=np.float32)
-                # print('pada_dc_target_weights:',rois_per_image*weight)
+                print('pada_dc_target_weights:',rois_per_image*weight)
                 continue  # we do not supervise on target set rois.
         
         num_boxes = boxes.shape[0] #the rpn_rois for this image=entry

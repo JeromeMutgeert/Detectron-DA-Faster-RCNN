@@ -130,6 +130,14 @@ def train_model():
             training_stats.ResetIterTimer()
 
         if np.isnan(training_stats.iter_total_loss):
+            nu.print_net(model)
+            blobs = workspace.Blobs()
+            print()
+            print("Current blobs in the workspace:\n{}".format('\n'.join(blobs)))
+            print()
+            for blob in blobs:
+                print("Fetched {}:\n{}".format(blob,workspace.FetchBlob(blob)))
+                print()
             handle_critical_error(model, 'Loss is NaN')
 
     # Save the final model
