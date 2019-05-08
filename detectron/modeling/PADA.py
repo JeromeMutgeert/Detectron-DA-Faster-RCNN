@@ -79,7 +79,7 @@ class ClassWeightDB(object):
         # return self.avg_pada_stats.update_and_get(observed_fg_weight,weight=count)
     
     def get_avg_pada_weight(self):
-        return self.avg_pada_weigh
+        return self.avg_pada_weight
         # return self.avg_pada_stats.get()
     
     def get_dist(self):
