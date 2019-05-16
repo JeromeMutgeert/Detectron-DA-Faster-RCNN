@@ -51,7 +51,8 @@ class GenerateProposalLabelsOp(object):
         # not matter).
         json_dataset.add_proposals(roidb, rois, im_scales, crowd_thresh=0,model=self.model)
         
-        print('pada_dc_source_weights:',sum(entry['pada_roi_weights'].sum() for entry in roidb if entry['is_source']))
+        if 'is_source' in roidb[0]:
+            print('pada_dc_weights: source,target:',sum(entry['pada_roi_weights'].sum() for entry in roidb if entry['is_source']),sum(entry['pada_roi_weights'].sum() for entry in roidb if not entry['is_source']))
         
         roidb_utils.add_bbox_regression_targets(roidb)
         blobs = {k: [] for k in output_blob_names}

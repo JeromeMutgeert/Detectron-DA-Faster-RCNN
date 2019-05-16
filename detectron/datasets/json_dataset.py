@@ -373,7 +373,7 @@ def _merge_proposal_boxes_into_roidb(roidb, box_list,model=None):
                 source_imgs = ims-ims//2; target_imgs = ims//2
                 weight *= source_imgs/target_imgs
                 entry['pada_roi_weights'] = np.full(rois_per_image,weight,dtype=np.float32)
-                print('pada_dc_target_weights:',rois_per_image*weight)
+                # print('pada_dc_target_weights:',rois_per_image*weight)
                 continue  # we do not supervise on target set rois.
         
         num_boxes = boxes.shape[0] #the rpn_rois for this image=entry
@@ -443,16 +443,20 @@ def _merge_proposal_boxes_into_roidb(roidb, box_list,model=None):
             # boxes = boxes[:rois_per_image] # already submitted as 'da_boxes'
             maxes = maxes[:rois_per_image]
             argmaxes = argmaxes[:rois_per_image]
-            assert (gt_classes[argmaxes][maxes > 0] != 0).all()
+            labels = gt_classes[argmaxes]
+            assert (labels[maxes > 0] != 0).all()
+            
+            
+            # model.class_weight_db.set_maxes(maxes)
             
             class_weights = model.class_weight_db.class_weights
             
             # Each roi has a fg and a bg part. The portion between these parts is determined by the IoU (scores).
             # The fg part is weighted by PADA with the corresponding class weights, and the bg part is set
-            # to be on average 75% of the total weight: w_pada * fg + bg.
+            # to be on average 75% of the total weight: w_pada * fg + bg
             # The bg wieghts can also be less than 75% if there are not much bg rois, because w_bg may be at most 1.0 per roi.
             
-            pada_weights = maxes*class_weights[gt_classes[argmaxes]]
+            pada_weights = maxes*class_weights[labels]
             # pada_fg_weight = pada_weights.sum()
             # fg_weight = maxes.sum()
             # avg_pada_roi_weight = pada_fg_weight / (fg_weight + np.finfo(float).eps)

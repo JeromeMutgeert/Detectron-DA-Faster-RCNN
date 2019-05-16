@@ -229,34 +229,52 @@ class RoIDataLoader(object):
         return db_inds, db_target_inds
     
     def get_perm_state(self,iters_done):
+        state = {}
         with self._lock:
             perm = self._perm
             cur = self._cur
         
-        if self._target_roidb == None:
-            ims_per_batch = cfg.TRAIN.IMS_PER_BATCH
-        else:
-            ims_per_batch = cfg.TRAIN.IMS_PER_BATCH-cfg.TRAIN.IMS_PER_BATCH//2
-        
-        batches_per_roidb = (len(self._roidb) + ims_per_batch - 1)//ims_per_batch
-        
-        actual_cur = (iters_done % batches_per_roidb) * ims_per_batch
-        
-        # undo imgs in mb_queue and BlobsQueue:
-        mb_qsize = max(0, cur - actual_cur)
-        perm.rotate(mb_qsize)
-        cur = actual_cur
-        state = np.array([cur] + list(perm), dtype=np.int32)
-        # logger.info(str(('saving',cur,list(perm)[:10],-mb_qsize)))
+            if self._target_roidb is None:
+                ims_per_batch = cfg.TRAIN.IMS_PER_BATCH
+            else:
+                ims_per_batch = cfg.TRAIN.IMS_PER_BATCH-cfg.TRAIN.IMS_PER_BATCH//2
+            batches_per_roidb = (len(self._roidb) + ims_per_batch - 1)//ims_per_batch
+            actual_cur = (iters_done % batches_per_roidb) * ims_per_batch
+            
+            # undo imgs in mb_queue and BlobsQueue:
+            mb_qsize = max(0, cur - actual_cur)
+            perm.rotate(mb_qsize)
+            cur = actual_cur
+            state['roidb_order'] = np.array([cur] + list(perm), dtype=np.int32)
+            
+            if self._target_roidb is not None:
+                perm = self._target_perm
+                cur = self._target_cur
+            
+                ims_per_batch = cfg.TRAIN.IMS_PER_BATCH//2
+                batches_per_roidb = (len(self._roidb) + ims_per_batch - 1)//ims_per_batch
+                actual_cur = (iters_done % batches_per_roidb) * ims_per_batch
+                
+                # undo imgs in mb_queue and BlobsQueue:
+                mb_qsize = max(0, cur - actual_cur)
+                perm.rotate(mb_qsize)
+                cur = actual_cur
+                state['target_roidb_order'] = np.array([cur] + list(perm), dtype=np.int32)
+            # logger.info(str(('saving',cur,list(perm)[:10],-mb_qsize)))
         return state
     
     def set_perm_state(self,state):
-        cur = state[0]
-        perm = state[1:]
+        order = state['roidb_order'] if type(state) == type(dict()) else state
+        cur = order[0]
+        perm = order[1:]
         with self._lock:
             self._minibatch_queue.empty()
             self._perm = deque(perm)
             self._cur = cur
+            if self._target_roidb is not None and type(state) == type(dict()) and 'target_roidb_order' in state:
+                order = state['target_roidb_order']
+                self._target_cur = order[0]
+                self._target_perm = deque(order[1:])
     
     def get_output_names(self):
         return self._output_names

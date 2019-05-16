@@ -587,6 +587,8 @@ __C.TRAIN.PADA = False
 __C.TRAIN.DA_FADE_IN = False
 __C.TRAIN.DA_LR_MULT = 1
 
+__C.TRAIN.INPUT_SCALE_LR_CORRECTION = False
+
 # ---------------------------------------------------------------------------- #
 # Solver options
 # Note: all solver options are used exactly as specified; the implication is

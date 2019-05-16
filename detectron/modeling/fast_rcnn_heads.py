@@ -57,7 +57,7 @@ def add_fast_rcnn_outputs(model, blob_in, dim):
     )
     
     if model.train and cfg.TRAIN.PADA:
-        model.PADAbyGradientWeightingLayer('cls_score','cls_score','source_labels_int32')
+        model.PADAbyGradientWeightingLayer('cls_score','pada_cls_score','source_labels_int32')
     
     if not model.train:  # == if test
         # Only add softmax when testing; during training the softmax is combined
@@ -86,13 +86,13 @@ def add_fast_rcnn_outputs(model, blob_in, dim):
 def add_fast_rcnn_losses(model):
     """Add losses for RoI classification and bounding box regression."""
     if cfg.TRAIN.DOMAIN_ADAPTATION:
-        model.MaskingInput(['cls_score', 'label_mask'], ['source_cls_score'])
+        scores = 'cls_score'
+        if cfg.TRAIN.PADA:
+            scores = 'pada_' + scores
+        model.MaskingInput([scores, 'label_mask'], ['source_cls_score'])
         model.MaskingInput(['bbox_pred', 'label_mask'], ['source_bbox_pred'])
         
-        if cfg.TRAIN.PADA:
-            pass
-        
-        cls_prob, loss_cls = model.net.SoftmaxWithLoss( # add a third input if PADA, the weights:
+        cls_prob, loss_cls = model.net.SoftmaxWithLoss(
             ['source_cls_score', 'source_labels_int32'], ['cls_prob', 'loss_cls'],
             scale=model.GetLossScale()
         )
@@ -105,6 +105,20 @@ def add_fast_rcnn_losses(model):
             scale=model.GetLossScale()
         )
         model.Accuracy(['cls_prob', 'source_labels_int32'], 'accuracy_cls')
+        
+        def update_conf_matrix(inputs,outputs):
+            cls_prob = inputs[0].data
+            labels = inputs[1].data
+            # print(cls_prob.shape)
+            # print(labels.shape)
+            
+            model.class_weight_db.update_confusion_matrix(cls_prob,labels)
+            
+        model.net.Python(update_conf_matrix)(['cls_prob','source_labels_int32'],[],name='UpdateConfusionMatrix')
+        
+            
+            
+        
     else:
         cls_prob, loss_cls = model.net.SoftmaxWithLoss(
             ['cls_score', 'labels_int32'], ['cls_prob',     'loss_cls'],

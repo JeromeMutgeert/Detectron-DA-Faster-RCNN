@@ -255,8 +255,8 @@ if __name__ == '__main__':
     def score_fn(proposed,prop_weight):
         """The function to be maximized by (greedy) subset selection"""
         return np.log(KL_div(proposed,coco_dist)) - np.log(KL_div(yisual_dist,proposed))
-        return KL_div(proposed,coco_dist)/divergences_coco[-1] - KL_div(yisual_dist,proposed)/divergences[-1] #+ prop_weight/total_weight
-        return prop_weight**2 *KL_div(proposed,coco_dist)/KL_div(yisual_dist,proposed)
+        # return KL_div(proposed,coco_dist)/divergences_coco[-1] - KL_div(yisual_dist,proposed)/divergences[-1] #+ prop_weight/total_weight
+        # return prop_weight**2 *KL_div(proposed,coco_dist)/KL_div(yisual_dist,proposed)
     
     # normalise per-image:
     im_weights = voc_wts.sum(axis=1)

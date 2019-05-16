@@ -220,6 +220,7 @@ def compute_bbox_regression_targets(entry):
         1 if cfg.MODEL.CLS_AGNOSTIC_BBOX_REG else labels[ex_inds])
     targets[ex_inds, 1:] = box_utils.bbox_transform_inv(
         ex_rois, gt_rois, cfg.MODEL.BBOX_REG_WEIGHTS)
+    assert not np.isnan(targets).any()
     return targets
 
 

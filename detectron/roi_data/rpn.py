@@ -240,6 +240,9 @@ def _get_rpn_blobs(im_height, im_width, foas, all_anchors, gt_boxes):
     bbox_outside_weights = np.zeros((num_inside, 4), dtype=np.float32)
     # uniform weighting of examples (given non-uniform sampling)
     num_examples = np.sum(labels >= 0)
+    if num_examples == 0:
+        print('num_examples caught!')
+        num_examples = 0.5
     bbox_outside_weights[labels == 1, :] = 1.0 / num_examples
     bbox_outside_weights[labels == 0, :] = 1.0 / num_examples
 

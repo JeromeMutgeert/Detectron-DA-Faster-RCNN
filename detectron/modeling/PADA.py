@@ -17,13 +17,18 @@ def print_dist(dist,name):
 
 class ClassWeightDB(object):
     
-    def __init__(self,weight_db=None):
+    def __init__(self,weight_db=None,conf_matrix=None,ns=None,fg_acc=None):
         self.weight_db = weight_db
         self.total_sum_softmax = None
         self.class_weights = None
         self.gt_ins_dist = None
         self.starting_dist = None
         self.avg_pada_weight = 0
+        # self.prepared = False
+        # self.maxes = None
+        self.conf_matrix = conf_matrix
+        self.conf_col_avgs = ns
+        self.fg_acc = RollingAvg(1000,*fg_acc) if fg_acc is not None else None
     
     def setup(self,roi_data_loader):
         source_roidb = roi_data_loader._roidb
@@ -64,19 +69,92 @@ class ClassWeightDB(object):
         print("Weighted avg pada weight (by gt dist):", avg_pada_weight)
         # self.avg_pada_stats = RollingAvg(n_instances,avg_resume=avg_pada_weight)
         self.avg_pada_weight = avg_pada_weight
+        
+        nclasses = len(self.class_weights)
+        if self.conf_matrix is None:
+            self.conf_matrix = np.eye(nclasses)
+        ns = [1000] * nclasses if self.conf_col_avgs is None else self.conf_col_avgs
+        self.conf_col_avgs = [(c,RollingAvg(2000, avg_init=self.conf_matrix[:, c], n_init=ns[c])) for c in range(nclasses)]
+        
+        if self.fg_acc is None:
+            self.fg_acc = RollingAvg(1000)
     
     def update_class_weights(self,im_idx,sum_softmax):
         prev_sum_softmax = self.weight_db[im_idx].copy()
+        
+        # map the sum_softmax to the expected gt space:
+        sum_softmax = np.matmul(self.conf_matrix,sum_softmax[:,None])[:,0]
+        sum_softmax[0] = 0.0
+        
         self.weight_db[im_idx] = sum_softmax
-        print('NormalizedMeanSquaredUpdate:',((prev_sum_softmax - sum_softmax)**2).mean()/prev_sum_softmax.sum(),prev_sum_softmax.sum(),sum_softmax.sum(),im_idx)
+        # print('NormalizedMeanSquaredUpdate:',((prev_sum_softmax - sum_softmax)**2).mean()/prev_sum_softmax.sum(),prev_sum_softmax.sum(),sum_softmax.sum(),im_idx)
         self.total_sum_softmax += sum_softmax - prev_sum_softmax
         self.class_weights = self.total_sum_softmax / self.gt_ins_dist
         self.class_weights /= self.class_weights.max()
         self.avg_pada_weight = (self.class_weights * self.gt_ins_dist).sum()
         
-    def update_get_avg_pada_weight(self,observed_fg_weight,count=1):
-        return self.avg_pada_weight
-        # return self.avg_pada_stats.update_and_get(observed_fg_weight,weight=count)
+        
+    # def set_maxes(self,maxes):
+    #     if self.prepared:
+    #         self.maxes = np.concatenate([self.maxes,maxes])
+    #     else:
+    #         self.maxes = maxes
+    #     self.prepared = True
+    
+    def update_confusion_matrix(self,probs,labels):
+        # assert self.prepared
+        # self.prepared = False
+        
+        nrois, nclasses = probs.shape
+        
+        
+        # if len(self.maxes) > nrois:
+        #     maxes = self.maxes[:nrois]
+        #     self.maxes = self.maxes[nrois:]
+        #     self.prepared = True # remain prepared for other source imgs.
+        # else:
+        #     maxes = self.maxes
+        
+        sel = labels > -1
+        # maxes  =  maxes[sel]
+        probs  =  probs[sel,:]
+        labels = labels[sel]
+        nrois = len(labels)
+        
+        one_hot_labels = np.zeros((nclasses,nrois),dtype=np.float32)
+        one_hot_labels[labels,np.arange(nrois)] = 1.0 #maxes
+        
+        # print(one_hot_labels.shape)
+        
+        pij = np.matmul(one_hot_labels,probs)
+        total_weights = pij.sum(axis=0)
+        zeroed_cls = np.where(total_weights == 0.0)
+        total_weights[zeroed_cls] = -1
+        pij /= total_weights[None,:] # normalisation such that pij[i,j] = P(gt=i|pred=j)
+        
+        
+        for (c,col),w in zip(self.conf_col_avgs,total_weights):
+            if w > 0:
+                self.conf_matrix[:,c] = col.update_and_get(pij[:,c],weight=w)
+        
+        sel = labels > 0  # only confuse fg classes.
+        # maxes  =  maxes[sel]
+        probs  =  probs[sel,:]
+        labels = labels[sel]
+        # nrois = len(labels)
+        
+        correct = (probs.argmax(axis=1) == labels).sum()
+        fg_accuracy = correct / float(len(labels))
+        # print('Foreground accuracy: {} ({}/{})'.format(fg_accuracy,correct,len(labels)))
+        self.fg_acc.update_and_get(fg_accuracy,len(labels))
+        
+        
+        
+        
+    
+    # def update_get_avg_pada_weight(self,observed_fg_weight,count=1):
+    #     return self.avg_pada_weight
+    #     # return self.avg_pada_stats.update_and_get(observed_fg_weight,weight=count)
     
     def get_avg_pada_weight(self):
         return self.avg_pada_weight
@@ -91,21 +169,21 @@ class ClassWeightDB(object):
         return KL_div(self.get_dist(),self.starting_dist)
     
     def get_state(self):
-        return self.weight_db
+        return self.weight_db, self.conf_matrix, np.array([avg.n for _,avg in self.conf_col_avgs]),np.array([self.fg_acc.get(),self.fg_acc.n])
         
         
 class RollingAvg(object):
-    def __init__(self,max_sample_size,avg_resume=None,n_resume=None):
+    def __init__(self, max_sample_size, avg_init=None, n_init=None):
         self.n = 0
         self.max_n = max_sample_size
         self.sum = 0.0
         self.avg = 0.0
-        if avg_resume is not None:
-            if n_resume is not None:
-                self.n = n_resume
+        if avg_init is not None:
+            if n_init is not None:
+                self.n = n_init
             else:
                 self.n = self.max_n
-            self.sum = avg_resume * self.n
+            self.sum = avg_init * self.n
         if self.n != 0:
             self.avg = self.sum / self.n
     

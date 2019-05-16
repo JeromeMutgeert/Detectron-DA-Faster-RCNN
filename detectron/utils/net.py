@@ -132,7 +132,7 @@ def initialize_gpu_from_weights_file(model, weights_file, gpu_id=0):
     if cfg.TRAIN.PADA:
         if 'weight_db' in src_blobs:
             import detectron.modeling.PADA as pada
-            model.class_weight_db = pada.ClassWeightDB(src_blobs['weight_db'])
+            model.class_weight_db = pada.ClassWeightDB(*src_blobs['weight_db'])
             del src_blobs['weight_db']
     
     # We preserve blobs that are in the weights file but not used by the current

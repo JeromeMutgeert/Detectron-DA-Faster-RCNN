@@ -50,6 +50,62 @@ import detectron.utils.env as envu
 import detectron.utils.net as nu
 
 
+def blob_summary(blobs=None):
+    if blobs is None:
+        blobs = workspace.Blobs()
+        print()
+        print("Current blobs in the workspace:\n{}".format('\n'.join(blobs)))
+        print()
+        for blob in blobs:
+            print("Fetched {}:\n{}".format(blob,workspace.FetchBlob(blob)))
+            print()
+        # blobs = ['conv1','conv1_w']
+        # blobs = ['gpu_0/'+b for b in blobs]
+    else:
+        blobs = ['gpu_0/'+b for b in blobs]
+    print()
+    for blob in blobs:
+        
+        b = workspace.FetchBlob(blob)
+        shape = b.shape
+        b = np.array(b.astype(float)).reshape(-1)
+        order = np.argsort(b)
+        step = max(1,len(b)//10)
+        idxs = np.arange(step//2,len(b),step)
+        percentiles = b[order[idxs]]
+        hi = b[order[-1]]
+        lo = b[order[0]]
+        abs_mean,mean,std,zeros = [np.format_float_scientific(v,precision=2) for v in [np.abs(b).mean(), b.mean(),b.std(),sum(b == 0.0)/len(b)]]
+        print(" {} {} ({}): abs mean:{} mean:{} std:{} zeros:{} \nmin-5-15-...-85-95-max percentiles: {} ".format(blob, shape, len(b),
+               abs_mean,mean,std,zeros,' '.join([np.format_float_scientific(p,precision=2) for p in [lo] + list(percentiles)+ [hi]])))
+        print()
+
+
+def print_conf_matrix(conf_matrix):
+    shades = 'M987654321. '[::-1]
+    import detectron.datasets.dummy_datasets as dummy_datasets
+    classes = np.array(dummy_datasets.get_coco_dataset().classes.values(),dtype=str)
+    print()
+    # header:
+    for c in classes:
+        print(c[0],end='')
+    print(' <- pr.; gt:')
+    # body:
+    for c_gt,class_gt in enumerate(classes):
+        for p in conf_matrix[c_gt,:]:
+            if p >= 1.1:
+                print('woah',p)
+            else:
+                try:
+                    idx = int(p / 0.1) + int(p > 0.)
+                    # print(p,idx,len(shades))
+                    print(shades[idx],end='')
+                except:
+                    print('whaow!',idx,p)
+        print(' : {} (sum: {})'.format(class_gt,conf_matrix[c_gt,:].sum()))
+    print()
+    
+
 def train_model():
     """Model training loop."""
     start_time = time.time()
@@ -90,9 +146,15 @@ def train_model():
         workspace.RunNet(model.net.Proto().name)
         if cur_iter == start_iter:
             nu.print_net(model)
+            # blob_summary()
         training_stats.IterToc()
         training_stats.UpdateIterStats()
         training_stats.LogIterStats(cur_iter, lr)
+        
+        if (cur_iter) % (training_stats.LOG_PERIOD*10) == 0:
+            print_conf_matrix(model.class_weight_db.conf_matrix)
+            blob_summary(['conv3_1_w','conv3_1_b','conv5_3','da_fc7','da_conv_2','dc_ip3','dc_ip3_w','dc_ip2_w_grad'])
+        
         
         if cfg.INTERRUPTING and time.time() - start_time > cfg.THRESH_TIME:
             checkpoints[cur_iter] = os.path.join(
@@ -128,8 +190,9 @@ def train_model():
             # Reset the iteration timer to remove outliers from the first few
             # SGD iterations
             training_stats.ResetIterTimer()
-
-        if np.isnan(training_stats.iter_total_loss):
+          
+        v = training_stats.iter_total_loss+model.class_weight_db.avg_pada_weight
+        if np.isnan(v) or v == np.infty or v == -np.infty:
             nu.print_net(model)
             blobs = workspace.Blobs()
             print()
@@ -138,7 +201,9 @@ def train_model():
             for blob in blobs:
                 print("Fetched {}:\n{}".format(blob,workspace.FetchBlob(blob)))
                 print()
-            handle_critical_error(model, 'Loss is NaN')
+            blob_summary(['conv3_1_w','conv3_1_b','conv5_3','da_fc7','da_conv_2','dc_ip3','dc_ip3_w','dc_ip2_w_grad'])
+            blob_summary()
+            handle_critical_error(model, 'Loss is {}'.format(v))
 
     # Save the final model
     checkpoints['final'] = os.path.join(output_dir, 'model_final.pkl')

@@ -114,6 +114,22 @@ def add_single_gpu_param_update_ops(model, gpu_id):
         # PADA also adds x10 lr_mult on the added adversarial layers that are trained from scratch.
         DA_params = ['gpu_0/dc_ip{}'.format(n) for n in [1,2,3]] + ['gpu_0/da_conv_{}'.format(n) for n in [1,2]]
         
+        factors = {}
+        if cfg.TRAIN.INPUT_SCALE_LR_CORRECTION:
+            scales = {}
+            scale = 1/3
+            for block in [5,4,3]:
+                scales[block] = scale
+                scale /= 3
+            factors = {
+                'gpu_0/conv{}_{}_{}'.format(block,l,param) :
+                    scales[block] if param == 'w' else 1 / scales[block]
+                for block in [3,4,5]
+                for l in [1,2,3]
+                for param in 'wb'
+            }
+            
+        
         if param in model.biases:
             # Special treatment for biases (mainly to match historical impl.
             # details):
@@ -126,7 +142,12 @@ def add_single_gpu_param_update_ops(model, gpu_id):
         
         if cfg.TRAIN.DA_LR_MULT != 1 and param in [blob + '_w' for blob in DA_params]:
             model.Scale(param_grad, param_grad, scale=float(cfg.TRAIN.DA_LR_MULT))
-            
+        
+        if param in factors:
+            scale = factors[str(param)]
+            model.Scale(param_grad, param_grad, scale = scale)
+            print('{} lr scaled by a factor {}'.format(param,scale))
+        
         elif param in model.gn_params:
             # Special treatment for GroupNorm's parameters
             model.WeightedSum([param_grad, one, param, wd_gn], param_grad)
