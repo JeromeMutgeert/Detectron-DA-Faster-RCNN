@@ -448,6 +448,8 @@ class DetectionModelHelper(cnn.CNNModelHelper):
             class_weights = self.class_weight_db.class_weights
             bg_weight = self.class_weight_db.get_avg_pada_weight()
             class_weights[0] = bg_weight
+            fading = self.da_fade_in.get_weight()
+            class_weights = class_weights * fading + (1 - fading)
 
             weighting = np.zeros(grad_output.shape[0],dtype=np.float32)
             weighting[label_mask] = class_weights[labels]

@@ -126,7 +126,7 @@ def add_single_gpu_param_update_ops(model, gpu_id):
                     scales[block] if param == 'w' else 1 / scales[block]
                 for block in [3,4,5]
                 for l in [1,2,3]
-                for param in 'wb'
+                for param in 'w'
             }
             
         

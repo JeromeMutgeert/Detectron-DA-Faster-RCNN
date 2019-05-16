@@ -17,7 +17,7 @@ def print_dist(dist,name):
 
 class ClassWeightDB(object):
     
-    def __init__(self,weight_db=None,conf_matrix=None,ns=None,fg_acc=None):
+    def __init__(self,weight_db=None,conf_matrix=None,ns=None,fg_acc=(None,)):
         self.weight_db = weight_db
         self.total_sum_softmax = None
         self.class_weights = None
@@ -28,7 +28,7 @@ class ClassWeightDB(object):
         # self.maxes = None
         self.conf_matrix = conf_matrix
         self.conf_col_avgs = ns
-        self.fg_acc = RollingAvg(1000,*fg_acc) if fg_acc is not None else None
+        self.fg_acc = fg_acc
     
     def setup(self,roi_data_loader):
         source_roidb = roi_data_loader._roidb
@@ -76,8 +76,8 @@ class ClassWeightDB(object):
         ns = [1000] * nclasses if self.conf_col_avgs is None else self.conf_col_avgs
         self.conf_col_avgs = [(c,RollingAvg(2000, avg_init=self.conf_matrix[:, c], n_init=ns[c])) for c in range(nclasses)]
         
-        if self.fg_acc is None:
-            self.fg_acc = RollingAvg(10000)
+        # if self.fg_acc is None:
+        self.fg_acc = RollingAvg(10000,*self.fg_acc)
     
     def update_class_weights(self,im_idx,sum_softmax):
         prev_sum_softmax = self.weight_db[im_idx].copy()
@@ -194,7 +194,7 @@ class RollingAvg(object):
             self.sum += sample * diff
             self.n = self.max_n
             weight = weight - diff
-        if self.n == self.max_n:
+        if self.n >= self.max_n:
             self.sum = self.sum * (self.n - weight) / self.n + sample * weight
         self.avg = self.sum / self.n
         return self.avg
@@ -213,9 +213,12 @@ class DAScaleFading(object):
         self.max_iter = float(max_iter)
         self.gamma = float(gamma)
         self.it = 0
+        self.weight = 0.
+        self.set_iter(self.it)
         
     def set_iter(self,it):
-        self.it = float(it)
+        self.it = it
+        self.weight = 2 / (1 + np.exp(-self.gamma * float(it) / self.max_iter)) - 1
         
     def get_weight(self):
-        return 2 / (1 + np.exp(-self.gamma * self.it / self.max_iter)) - 1
+        return self.weight
