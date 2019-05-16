@@ -85,7 +85,9 @@ class ClassWeightDB(object):
         # print('NormalizedMeanSquaredUpdate:',((prev_sum_softmax - sum_softmax)**2).mean()/prev_sum_softmax.sum(),prev_sum_softmax.sum(),sum_softmax.sum(),im_idx)
         self.total_sum_softmax += sum_softmax - prev_sum_softmax
         # map the sum_softmax'es to the expected gt space:
-        self.class_weights =  np.matmul(self.conf_matrix,self.total_sum_softmax[:,None])[:,0] / self.gt_ins_dist
+        gt_sum_softmax = np.matmul(self.conf_matrix,self.total_sum_softmax[:,None])[:,0]
+        gt_sum_softmax[0] = 0.0
+        self.class_weights =  gt_sum_softmax / self.gt_ins_dist
         self.class_weights /= self.class_weights.max()
         self.avg_pada_weight = (self.class_weights * self.gt_ins_dist).sum()
         
