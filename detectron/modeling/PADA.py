@@ -77,19 +77,15 @@ class ClassWeightDB(object):
         self.conf_col_avgs = [(c,RollingAvg(2000, avg_init=self.conf_matrix[:, c], n_init=ns[c])) for c in range(nclasses)]
         
         if self.fg_acc is None:
-            self.fg_acc = RollingAvg(1000)
+            self.fg_acc = RollingAvg(10000)
     
     def update_class_weights(self,im_idx,sum_softmax):
         prev_sum_softmax = self.weight_db[im_idx].copy()
-        
-        # map the sum_softmax to the expected gt space:
-        sum_softmax = np.matmul(self.conf_matrix,sum_softmax[:,None])[:,0]
-        sum_softmax[0] = 0.0
-        
         self.weight_db[im_idx] = sum_softmax
         # print('NormalizedMeanSquaredUpdate:',((prev_sum_softmax - sum_softmax)**2).mean()/prev_sum_softmax.sum(),prev_sum_softmax.sum(),sum_softmax.sum(),im_idx)
         self.total_sum_softmax += sum_softmax - prev_sum_softmax
-        self.class_weights = self.total_sum_softmax / self.gt_ins_dist
+        # map the sum_softmax'es to the expected gt space:
+        self.class_weights =  np.matmul(self.conf_matrix,self.total_sum_softmax[:,None])[:,0] / self.gt_ins_dist
         self.class_weights /= self.class_weights.max()
         self.avg_pada_weight = (self.class_weights * self.gt_ins_dist).sum()
         
