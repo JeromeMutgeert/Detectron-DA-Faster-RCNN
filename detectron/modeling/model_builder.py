@@ -229,7 +229,7 @@ def build_generic_detection_model(
             # Add Instance-level loss
             head_loss_gradients['instance'], blob_feats_rois_all, dim_feats_rois_all = _add_instance_level_classifier(model, blob_conv, dim_conv, spatial_scale_conv)
             # Add consistency regularization
-            head_loss_gradients['consistency'] = _add_consistency_loss(model, blob_conv, dim_conv, blob_feats_rois_all, dim_feats_rois_all)
+            # head_loss_gradients['consistency'] = _add_consistency_loss(model, blob_conv, dim_conv, blob_feats_rois_all, dim_feats_rois_all)
             
             if cfg.TRAIN.PADA:
                 _add_pada_frcnn_head(model,blob_feats_rois_all,dim_feats_rois_all)

@@ -449,8 +449,11 @@ class DetectionModelHelper(cnn.CNNModelHelper):
             bg_weight = self.class_weight_db.get_avg_pada_weight()
             class_weights[0] = bg_weight
             fading = self.da_fade_in.get_weight()
-            class_weights = class_weights * fading + (1 - fading)
-
+            class_weights = class_weights ** fading
+            
+            # correct for large instance gradients due to loss-averaging in small batches (rpn does not always predict many)
+            class_weights *= len(labels) / cfg.TRAIN.BATCH_SIZE_PER_IM
+            
             weighting = np.zeros(grad_output.shape[0],dtype=np.float32)
             weighting[label_mask] = class_weights[labels]
             for _ in range(len(grad_output.shape) - 1):

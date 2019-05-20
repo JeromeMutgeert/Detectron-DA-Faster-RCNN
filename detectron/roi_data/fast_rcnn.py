@@ -147,7 +147,18 @@ def add_fast_rcnn_blobs(blobs, im_scales, roidb):
     # Add FPN multilevel training RoIs, if configured
     if cfg.FPN.FPN_ON and cfg.FPN.MULTILEVEL_ROIS:
         _add_multilevel_rois(blobs)
-
+    
+    if cfg.TRAIN.PADA:
+        # Cancel out the large gradients from loss-averaging over small roi proposal batches.
+        # loss-averaging for regular batches means dividing the instance losses by the regular batch size.
+        # we correct small batch loss-averaging by multiplying by the small batch size, and dividing by the regular batch size.
+        regular_rois_batch_size = cfg.TRAIN.IMS_PER_BATCH * cfg.TRAIN.BATCH_SIZE_PER_IM
+        pada_weights = blobs['pada_roi_weights']
+        rois = len(pada_weights)
+        pada_weights *= rois/regular_rois_batch_size # lower pada_weights means lower learning rate.
+        blobs['pada_roi_weights'] = pada_weights
+        
+    
     # Perform any final work and validity checks after the collating blobs for
     # all minibatch images
     valid = True

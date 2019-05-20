@@ -112,32 +112,36 @@ class TrainingStats(object):
         if cfg.TRAIN.DA_FADE_IN:
             stats['da_weight'] = self.model.da_fade_in.get_weight()
         if cfg.TRAIN.PADA:
+            
             stats['avg_pada_weight'] = self.model.class_weight_db.get_avg_pada_weight()
             stats['total_detects'] = self.model.class_weight_db.total_sum_softmax.sum() / 2
             stats['KL_div'] = self.model.class_weight_db.get_KL_to_init()
             stats['accuracy_fg'] = self.model.class_weight_db.fg_acc.get()
+            
+            target_dist = self.model.class_weight_db.get_dist()
+            print('target_dist: {}'.format(list(target_dist)))
+            class_weights = self.model.class_weight_db.class_weights
+            print('class_weights: {}'.format(list(class_weights)))
+            
+            classes = np.array(dummy_datasets.get_coco_dataset().classes.values(),dtype=str)
+            
+            for dist in [target_dist,class_weights]:
+                order = np.argsort(dist)[::-1]
+                o_target_dist = target_dist[order]
+                o_classes = classes[order]
+                cwo = class_weights[order]
+                print("dist tops: ",end='')
+                for prob,w,c in list(zip(o_target_dist,cwo,o_classes))[:5]:
+                    print("{}:{:.3f} ({:.3f})".format(c,prob,w),end=';  ')
+                print()
+            print()
+            
         for k, v in self.smoothed_losses_and_metrics.items():
             stats[k] = v.GetMedianValue()
         # for k,v in stats.items():
         #     print(k,v)
         
-        target_dist = self.model.class_weight_db.get_dist()
-        print('target_dist: {}'.format(list(target_dist)))
-        class_weights = self.model.class_weight_db.class_weights
-        print('class_weights: {}'.format(list(class_weights)))
         
-        classes = np.array(dummy_datasets.get_coco_dataset().classes.values(),dtype=str)
-        
-        for dist in [target_dist,class_weights]:
-            order = np.argsort(dist)[::-1]
-            o_target_dist = target_dist[order]
-            o_classes = classes[order]
-            cwo = class_weights[order]
-            print("dist tops: ",end='')
-            for prob,w,c in list(zip(o_target_dist,cwo,o_classes))[:5]:
-                print("{}:{:.3f} ({:.3f})".format(c,prob,w),end=';  ')
-            print()
-        print()
         
         
         return stats

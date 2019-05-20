@@ -76,7 +76,7 @@ def blob_summary(blobs=None):
         hi = b[order[-1]]
         lo = b[order[0]]
         abs_mean,mean,std,zeros = [np.format_float_scientific(v,precision=2) for v in [np.abs(b).mean(), b.mean(),b.std(),sum(b == 0.0)/len(b)]]
-        print(" {} {} ({}): abs mean:{} mean:{} std:{} zeros:{} \nmin-5-15-...-85-95-max percentiles: {} ".format(blob, shape, len(b),
+        print(" {} {} ({}): abs mean:{} mean:{} std:{} zeros:{} min-5-15-...-85-95-max percentiles: {} ".format(blob, shape, len(b),
                abs_mean,mean,std,zeros,' '.join([np.format_float_scientific(p,precision=2) for p in [lo] + list(percentiles)+ [hi]])))
         print()
 
@@ -146,7 +146,7 @@ def train_model():
         workspace.RunNet(model.net.Proto().name)
         if cur_iter == start_iter:
             nu.print_net(model)
-            # blob_summary()
+            # blob_summary(['conv{}_{}'.format(i,j) for i in [1,2,3,4,5] for j in [1,2,3] if not ((j==3) and (i < 3))])
         training_stats.IterToc()
         training_stats.UpdateIterStats()
         training_stats.LogIterStats(cur_iter, lr)
