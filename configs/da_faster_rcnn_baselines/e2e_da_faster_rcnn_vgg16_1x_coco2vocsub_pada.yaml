@@ -42,7 +42,7 @@ TEST:
 OUTPUT_DIR: .
 
 INTERRUPTING: True
-#THRESH_TIME: 2 days minus 15 mins from config.py
+THRESH_TIME: 52949 # not 2 days minus 15 mins from config.py, but 80% of the time until expected to get critical.
 
 VOC_SUBSET: 'voc_subset.npy'  # 5392 imgs
 
