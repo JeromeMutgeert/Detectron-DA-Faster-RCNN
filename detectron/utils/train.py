@@ -151,9 +151,11 @@ def train_model():
         training_stats.UpdateIterStats()
         training_stats.LogIterStats(cur_iter, lr)
         
-        if (cur_iter) % (training_stats.LOG_PERIOD*10) == 0:
+        if (cur_iter) % (training_stats.LOG_PERIOD*50) == 0:
             print_conf_matrix(model.class_weight_db.conf_matrix)
-            blob_summary(['conv3_1_w','conv3_1_b','conv5_3','da_fc7','da_conv_2','dc_ip3','dc_ip3_w','dc_ip2_w_grad'])
+            pool2 = workspace.FetchBlob('gpu_0/pool2').data
+            print('pool2 max: {}'.format(pool2.max()))
+            blob_summary(['conv3_1_w','conv3_1_w_grad','conv3_1_b','conv5_3','da_fc7','da_conv_2','dc_ip3','dc_ip3_w','dc_ip2_w_grad'])
         
         
         if cfg.INTERRUPTING and time.time() - start_time > cfg.THRESH_TIME:
@@ -192,6 +194,12 @@ def train_model():
             training_stats.ResetIterTimer()
           
         v = training_stats.iter_total_loss+model.class_weight_db.avg_pada_weight
+        if training_stats.iter_total_loss > 4:
+            # print('Loss is {}'.format(training_stats.iter_total_loss))
+            pool2 = workspace.FetchBlob('gpu_0/pool2').data
+            print('pool2 max: {}'.format(pool2.max()))
+            blob_summary(['conv3_1_w','conv3_1_w_grad','conv3_1_b','conv5_3','da_fc7','da_conv_2','dc_ip3','dc_ip3_w','dc_ip2_w_grad'])
+        
         if np.isnan(v) or v == np.infty or v == -np.infty:
             nu.print_net(model)
             blobs = workspace.Blobs()

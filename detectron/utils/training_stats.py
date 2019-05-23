@@ -42,7 +42,7 @@ class TrainingStats(object):
         # Window size for smoothing tracked values (with median filtering)
         self.WIN_SZ = 20
         # Output logging period in SGD iterations
-        self.LOG_PERIOD = 20
+        self.LOG_PERIOD = 1
         self.smoothed_losses_and_metrics = {
             key: SmoothedValue(self.WIN_SZ)
             for key in model.losses + model.metrics
