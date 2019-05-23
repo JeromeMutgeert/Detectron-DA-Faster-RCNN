@@ -153,7 +153,7 @@ def train_model():
         
         if (cur_iter) % (training_stats.LOG_PERIOD*50) == 0:
             print_conf_matrix(model.class_weight_db.conf_matrix)
-            pool2 = workspace.FetchBlob('gpu_0/pool2').data
+            pool2 = workspace.FetchBlob('gpu_0/pool2').astype(float)
             print('pool2 max: {}'.format(pool2.max()))
             blob_summary(['conv3_1_w','conv3_1_w_grad','conv3_1_b','conv5_3','da_fc7','da_conv_2','dc_ip3','dc_ip3_w','dc_ip2_w_grad'])
         
@@ -196,7 +196,7 @@ def train_model():
         v = training_stats.iter_total_loss+model.class_weight_db.avg_pada_weight
         if training_stats.iter_total_loss > 4:
             # print('Loss is {}'.format(training_stats.iter_total_loss))
-            pool2 = workspace.FetchBlob('gpu_0/pool2').data
+            pool2 = workspace.FetchBlob('gpu_0/pool2').astype(float)
             print('pool2 max: {}'.format(pool2.max()))
             blob_summary(['conv3_1_w','conv3_1_w_grad','conv3_1_b','conv5_3','da_fc7','da_conv_2','dc_ip3','dc_ip3_w','dc_ip2_w_grad'])
         
