@@ -62,5 +62,9 @@ class GenerateProposalLabelsOp(object):
         roidb_utils.add_bbox_regression_targets(roidb)
         blobs = {k: [] for k in output_blob_names}
         fast_rcnn_roi_data.add_fast_rcnn_blobs(blobs, im_scales, roidb)
+        
+        if 'pada_roi_weights' in blobs:
+            blobs['avg_pada_weight'] = self.model.class_weight_db.avg_pada_weight
+            
         for i, k in enumerate(output_blob_names):
             blob_utils.py_op_copy_blob(blobs[k], outputs[i])

@@ -74,7 +74,7 @@ class ClassWeightDB(object):
         if self.conf_matrix is None:
             self.conf_matrix = np.eye(nclasses)
         ns = [1000] * nclasses if self.conf_col_avgs is None else self.conf_col_avgs
-        self.conf_col_avgs = [(c,RollingAvg(2000, avg_init=self.conf_matrix[:, c], n_init=ns[c])) for c in range(nclasses)]
+        self.conf_col_avgs = [(c,RollingAvg(5000, avg_init=self.conf_matrix[:, c], n_init=ns[c])) for c in range(nclasses)]
         
         # if self.fg_acc is None:
         self.fg_acc = RollingAvg(10000,*self.fg_acc)
@@ -105,7 +105,6 @@ class ClassWeightDB(object):
         
         nrois, nclasses = probs.shape
         
-        
         # if len(self.maxes) > nrois:
         #     maxes = self.maxes[:nrois]
         #     self.maxes = self.maxes[nrois:]
@@ -130,12 +129,11 @@ class ClassWeightDB(object):
         total_weights[zeroed_cls] = -1
         pij /= total_weights[None,:] # normalisation such that pij[i,j] = P(gt=i|pred=j)
         
-        
         for (c,col),w in zip(self.conf_col_avgs,total_weights):
             if w > 0:
                 self.conf_matrix[:,c] = col.update_and_get(pij[:,c],weight=w)
         
-        sel = labels > 0  # only confuse fg classes.
+        sel = labels > 0  # fg classes.
         # maxes  =  maxes[sel]
         probs  =  probs[sel,:]
         labels = labels[sel]
@@ -146,13 +144,6 @@ class ClassWeightDB(object):
         # print('Foreground accuracy: {} ({}/{})'.format(fg_accuracy,correct,len(labels)))
         self.fg_acc.update_and_get(fg_accuracy,len(labels))
         
-        
-        
-        
-    
-    # def update_get_avg_pada_weight(self,observed_fg_weight,count=1):
-    #     return self.avg_pada_weight
-    #     # return self.avg_pada_stats.update_and_get(observed_fg_weight,weight=count)
     
     def get_avg_pada_weight(self):
         return self.avg_pada_weight

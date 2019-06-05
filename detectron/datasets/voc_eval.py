@@ -172,9 +172,12 @@ def voc_eval(detpath,
     confidence = np.array([float(x[1]) for x in splitlines])
     BB = np.array([[float(z) for z in x[2:]] for x in splitlines])
 
+    print(BB.shape)
+    # print('br')
     # sort by confidence
     sorted_ind = np.argsort(-confidence)
-    BB = BB[sorted_ind, :]
+    if len(sorted_ind):
+        BB = BB[sorted_ind, :]
     image_ids = [image_ids[x] for x in sorted_ind]
 
     # go down dets and mark TPs and FPs

@@ -589,6 +589,9 @@ __C.TRAIN.DA_LR_MULT = 1
 
 __C.TRAIN.INPUT_SCALE_LR_CORRECTION = False
 
+# Divide the raw pixel values by this value (after mean substraction)
+__C.INPUT_NORMALIZER = 1.0
+
 # ---------------------------------------------------------------------------- #
 # Solver options
 # Note: all solver options are used exactly as specified; the implication is
@@ -1124,10 +1127,13 @@ def assert_and_infer_cfg(cache_urls=True, make_immutable=True):
         __C.TRAIN.ASPECT_GROUPING = False
     # if __C.TRAIN.VOC_SUBSET != '': make sure that the right three voc datasets are used.
     
+    cfg.INPUT_NORMALIZER = float(cfg.INPUT_NORMALIZER)
+    
     if cache_urls:
         cache_cfg_urls()
     if make_immutable:
         cfg.immutable(True)
+        
 
 
 def cache_cfg_urls():
