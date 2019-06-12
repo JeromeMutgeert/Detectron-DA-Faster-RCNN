@@ -318,9 +318,12 @@ def add_fast_rcnn_blobs(blobs, im_scales, roidb):
         if cfg.TRAIN.PADA:
             blobs['eval_start'] = eval_start
             blobs['eval_end'] = eval_end
-        for name in blob_names:
-            blobs[name] = np.array([blobs[name]]+[-1 if name[-3:] == 'end' else 0]*3,dtype=np.int32)
-            # blobs[name] = np.array([blobs[name]]+[-1 if name[-3:] == 'end' else 0]*1,dtype=np.int32) # for VGG16
+        if cfg.MODEL.CONV_BODY[:6] == "VGG16.":
+            for name in blob_names:
+                blobs[name] = np.array([blobs[name]]+[-1 if name[-3:] == 'end' else 0]*1,dtype=np.int32) # for VGG16
+        else:
+            for name in blob_names:
+                blobs[name] = np.array([blobs[name]]+[-1 if name[-3:] == 'end' else 0]*3,dtype=np.int32)
         
         
         # # DEBUG code:
@@ -560,9 +563,9 @@ def _sample_da_rois(roidb, im_scale, batch_idx):
         
         # PADA: group rois into groups suitable for slicing:
         # 0: unsup_source           | da
-        # 1: unsup_target           |  | cls_reg   | eval
-        # 2: sup_unsup_source       |  |         | sup
-        # 3: sup_source                |         |
+        # 1: unsup_target           |    | eval
+        # 2: sup_unsup_source       |  | sup
+        # 3: sup_source                |
     
         groups = np.full(total_boxes,3)      # default to sup
         groups[unsup_start : unsup_end] = 0  # now topK is default unsup
@@ -702,11 +705,12 @@ def _sample_da_rois(roidb, im_scale, batch_idx):
         # blob_dict['cls_reg_target_indices'] = cls_reg_target_indices
     
     
-     # PADA: group rois into groups suitable for slicing:
-        # 0: unsup_source           | da
-        # 1: unsup_target           |  | cls_reg   | eval
-        # 2: sup_unsup_source       |  |         | sup
-        # 3: sup_source                |         |
+    # PADA: group rois into groups suitable for slicing:
+    # 0: unsup_source           | da
+    # 1: unsup_target           |    | eval
+    # 2: sup_unsup_source       |  | sup
+    # 3: sup_source                |
+    
     # # DEBUG code:
     # s = set()
     # labs = sampled_labels[:]
