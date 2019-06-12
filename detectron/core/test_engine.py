@@ -110,7 +110,8 @@ def run_inference(
             for i in range(len(cfg.TEST.DATASETS)):
                 dataset_name, proposal_file = get_inference_dataset(i)
                 output_dir = get_output_dir(dataset_name, training=False)
-                print('len before',len(subset_pointer.subset))
+                if cfg.VOC_SUBSET != '':
+                    print('len before',len(subset_pointer.subset))
                 results = parent_func(
                     weights_file,
                     dataset_name,
