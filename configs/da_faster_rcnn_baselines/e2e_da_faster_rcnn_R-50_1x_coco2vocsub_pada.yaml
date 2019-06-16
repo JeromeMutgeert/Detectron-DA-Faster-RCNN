@@ -7,7 +7,7 @@ NUM_GPUS: 1
 SOLVER:
   WEIGHT_DECAY: 0.0005
   LR_POLICY: steps_with_decay
-  BASE_LR: 0.00015  # 0.0001 per image instead of 0.00125
+  BASE_LR: 0.0001  # 0.0001 per image instead of 0.00125
   GAMMA: 0.1
   MAX_ITER: 240000 # finetune schedule, 1/6 th of a full training schedule on coco.
   STEPS: [0, 160000]
@@ -26,10 +26,10 @@ TRAIN:
   WEIGHTS: R50_C4.pkl #frcnn_vgg16_coco.pkl #vgg16v2.pkl
   SOURCE_DATASETS: ('coco_2017_train',)
   TARGET_DATASETS: ('voc_2007_train','voc_2007_val','voc_2012_train') #subset of these, together 5392 imgs
-  SCALES: (800,)
-  MAX_SIZE: 1333
+  SCALES: (600,)
+  MAX_SIZE: 900
   IMS_PER_BATCH: 2 #3 # two source, one target.
-  BATCH_SIZE_PER_IM: 512
+  BATCH_SIZE_PER_IM: 320
   SNAPSHOT_ITERS: 10000000 #NEVER
 TEST:
   DATASETS: ('coco_2017_val',)
