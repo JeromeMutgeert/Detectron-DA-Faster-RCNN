@@ -46,8 +46,6 @@ import detectron.utils.blob as blob_utils
 def add_fast_rcnn_outputs(model, blob_in, dim):
     """Add RoI classification and bounding box regression output ops."""
     
-    blob_in = model.net.Slice([blob_in,'sup_start','sup_end'],'sup_source_feats')
-    
     # Box classification layer
     model.FC(
         blob_in,
@@ -59,9 +57,7 @@ def add_fast_rcnn_outputs(model, blob_in, dim):
     )
     
     if model.train and cfg.TRAIN.PADA:
-        # model.net.Gather(['cls_score','cls_reg_source_indices'],['sup_cls_score'])
-        # model.PADAbyGradientWeightingLayer('sup_cls_score','pada_cls_score','labels_int32')
-        model.PADAbyGradientWeightingLayer('cls_score','pada_cls_score','labels_int32')
+        model.PADAbyGradientWeightingLayer('cls_score','pada_cls_score','source_labels_int32')
     
     if not model.train:  # == if test
         # Only add softmax when testing; during training the softmax is combined
@@ -72,9 +68,9 @@ def add_fast_rcnn_outputs(model, blob_in, dim):
         2 if cfg.MODEL.CLS_AGNOSTIC_BBOX_REG else model.num_classes
     )
     
-    # if model.train and cfg.TRAIN.PADA and not cfg.MODEL.CLS_AGNOSTIC_BBOX_REG:
+    if model.train and cfg.TRAIN.PADA and not cfg.MODEL.CLS_AGNOSTIC_BBOX_REG:
         # The class-specific bbox predictors are independant of each other, so no pada weighting needed for this last layer.
-        # blob_in = model.PADAbyGradientWeightingLayer(blob_in, 'pada_weighted_feats', 'source_labels_int32')
+        blob_in = model.PADAbyGradientWeightingLayer(blob_in, 'pada_weighted_feats', 'source_labels_int32')
         # blob_in = blob_weighted
         
     model.FC(
@@ -85,24 +81,16 @@ def add_fast_rcnn_outputs(model, blob_in, dim):
         weight_init=gauss_fill(0.001),
         bias_init=const_fill(0.0)
     )
-    
-    if model.train and cfg.TRAIN.PADA and not cfg.MODEL.CLS_AGNOSTIC_BBOX_REG:
-        # model.net.Gather(['bbox_pred','cls_reg_source_indices'],['sup_bbox_pred'])
-        # model.PADAbyGradientWeightingLayer('sup_bbox_pred','pada_bbox_pred','labels_int32')
-        model.PADAbyGradientWeightingLayer('bbox_pred','pada_bbox_pred','labels_int32')
-        
 
 
 def add_fast_rcnn_losses(model):
     """Add losses for RoI classification and bounding box regression."""
-    if False and cfg.TRAIN.DOMAIN_ADAPTATION:
+    if cfg.TRAIN.DOMAIN_ADAPTATION:
         scores = 'cls_score'
-        box_preds = 'bbox_pred'
         if cfg.TRAIN.PADA:
             scores = 'pada_' + scores
-            box_preds = 'pada_' + box_preds
-        # model.MaskingInput([scores, 'label_mask'], ['source_cls_score'])
-        # model.MaskingInput([box_preds, 'label_mask'], ['source_bbox_pred'])
+        model.MaskingInput([scores, 'label_mask'], ['source_cls_score'])
+        model.MaskingInput(['bbox_pred', 'label_mask'], ['source_bbox_pred'])
         
         cls_prob, loss_cls = model.net.SoftmaxWithLoss(
             ['source_cls_score', 'source_labels_int32'], ['cls_prob', 'loss_cls'],
@@ -132,38 +120,19 @@ def add_fast_rcnn_losses(model):
             
         
     else:
-        
-        scores = 'cls_score'
-        box_preds = 'bbox_pred'
-        if cfg.TRAIN.PADA:
-            scores = 'pada_' + scores
-            box_preds = 'pada_' + box_preds
-            
         cls_prob, loss_cls = model.net.SoftmaxWithLoss(
-            [scores, 'labels_int32'], ['cls_prob',     'loss_cls'],
+            ['cls_score', 'labels_int32'], ['cls_prob',     'loss_cls'],
             scale=model.GetLossScale()
         )
         loss_bbox = model.net.SmoothL1Loss(
             [
-                box_preds, 'bbox_targets',    'bbox_inside_weights',
+                'bbox_pred', 'bbox_targets',    'bbox_inside_weights',
                 'bbox_outside_weights'
             ],
             'loss_bbox',
             scale=model.GetLossScale()
         )
         model.Accuracy(['cls_prob', 'labels_int32'], 'accuracy_cls')
-    
-    if cfg.TRAIN.PADA:
-        def update_conf_matrix(inputs,outputs):
-            cls_prob = inputs[0].data
-            labels = inputs[1].data
-            # print(cls_prob.shape)
-            # print(labels.shape)
-            
-            model.class_weight_db.update_confusion_matrix(cls_prob,labels)
-            
-        model.net.Python(update_conf_matrix)(['cls_prob','labels_int32'],[],name='UpdateConfusionMatrix')
-    
     loss_gradients = blob_utils.get_loss_gradients(model,   [loss_cls, loss_bbox])
     model.AddLosses(['loss_cls', 'loss_bbox'])
     model.AddMetrics('accuracy_cls')

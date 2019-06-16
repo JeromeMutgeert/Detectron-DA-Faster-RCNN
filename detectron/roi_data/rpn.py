@@ -57,9 +57,7 @@ def get_rpn_blob_names(is_training=True):
                 'rpn_bbox_outside_weights_wide'
             ]
         if cfg.TRAIN.DOMAIN_ADAPTATION:
-            # blob_names += ['is_source']
-            blob_names += ['source_start']
-            blob_names += ['source_end']
+            blob_names += ['is_source']
     return blob_names
 
 
@@ -99,15 +97,9 @@ def add_rpn_blobs(blobs, im_scales, roidb):
 
         if cfg.TRAIN.DOMAIN_ADAPTATION: 
             if entry['is_source']:
-            #     # blobs['is_source'].append(np.full((1,),True,dtype=np.bool_))
-            #     start
-            # else:
-            #     # blobs['is_source'].append(np.full((1,),False,dtype=np.bool_))
-                
-                # only works for consecutive sources, which is already required for slicing
-                if len(blobs['source_start']) == 0:
-                    blobs['source_start'] = np.array([im_i,0,0,0],dtype=np.int32)
-                blobs['source_end'] = np.array([im_i+1,-1,-1,-1],dtype=np.int32)
+                blobs['is_source'].append(np.full((1,),True,dtype=np.bool_))     
+            else:
+                blobs['is_source'].append(np.full((1,),False,dtype=np.bool_))
 
         # Add RPN targets
         if cfg.FPN.FPN_ON and cfg.FPN.MULTILEVEL_RPN:
@@ -251,10 +243,8 @@ def _get_rpn_blobs(im_height, im_width, foas, all_anchors, gt_boxes):
     if num_examples == 0:
         print('num_examples caught!')
         num_examples = 0.5
-    # factor =  avg_pada_weight / num_examples
-    factor = 1.0 / num_examples
-    bbox_outside_weights[labels == 1, :] = factor
-    bbox_outside_weights[labels == 0, :] = factor
+    bbox_outside_weights[labels == 1, :] = 1.0 / num_examples
+    bbox_outside_weights[labels == 0, :] = 1.0 / num_examples
 
     # Map up to original set of anchors
     labels = data_utils.unmap(labels, total_anchors, inds_inside, fill=-1)

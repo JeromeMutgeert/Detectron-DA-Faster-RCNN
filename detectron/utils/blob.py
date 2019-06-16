@@ -122,9 +122,6 @@ def prep_im_for_blob(im, pixel_means, target_size, max_size):
         fy=im_scale,
         interpolation=cv2.INTER_LINEAR
     )
-    if cfg.INPUT_NORMALIZER != 1.0:
-        # im /= 255.0 for example
-        im /= cfg.INPUT_NORMALIZER
     return im, im_scale
 
 

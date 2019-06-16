@@ -410,23 +410,18 @@ class DetectionModelHelper(cnn.CNNModelHelper):
         return output
     
     
-    def GradientScalerLayer(self, blob_in, blob_out, scale,inc_avg_pada_weight=False):
+    def GradientScalerLayer(self, blob_in, blob_out, scale):
         def gradScale(inputs, outputs):
             outputs[0].feed(inputs[0].data)
         def grad_gradScale(inputs, outputs):
             grad_output = inputs[-1]
             outputs[0].reshape(grad_output.shape)
             outputs[0].data[...] = scale*grad_output.data
-        if cfg.TRAIN.DA_FADE_IN or inc_avg_pada_weight:
+        if cfg.TRAIN.DA_FADE_IN:
             def grad_gradScale_fade(inputs, outputs):
                 grad_output = inputs[-1]
-                s = scale
-                if cfg.TRAIN.DA_FADE_IN:
-                    s *= self.da_fade_in.get_weight()
-                if inc_avg_pada_weight:
-                    s *= self.class_weight_db.avg_pada_weight
                 outputs[0].reshape(grad_output.shape)
-                outputs[0].data[...] = s * grad_output.data
+                outputs[0].data[...] = self.da_fade_in.get_weight()*scale*grad_output.data
             grad_gradScale = grad_gradScale_fade
             
         name = 'GradientScalerLayer:' + ','.join(
@@ -447,7 +442,7 @@ class DetectionModelHelper(cnn.CNNModelHelper):
             outputs[0].feed(inputs[0].data)
         def grad_gradScale(inputs, outputs):
             labels = inputs[1].data.astype(int)
-            # label_mask = inputs[2].data.astype(bool)
+            label_mask = inputs[2].data.astype(bool)
             grad_output = inputs[-1]
 
             class_weights = self.class_weight_db.class_weights
@@ -460,16 +455,14 @@ class DetectionModelHelper(cnn.CNNModelHelper):
             # correct for large instance gradients due to loss-averaging in small batches (rpn does not always predict many)
             class_weights *= len(labels) / cfg.TRAIN.BATCH_SIZE_PER_IM
             
-            # weighting = np.zeros(grad_output.shape[0],dtype=np.float32)
-            assert len(labels) == grad_output.shape[0]
-            weighting = class_weights[labels]
-            
+            weighting = np.zeros(grad_output.shape[0],dtype=np.float32)
+            weighting[label_mask] = class_weights[labels]
             for _ in range(len(grad_output.shape) - 1):
                 weighting = weighting[...,None] # add dim for each non-batch dimension.
             outputs[0].reshape(grad_output.shape)
             outputs[0].data[...] = weighting*grad_output.data
 
-        output = self.net.Python(f=gradScale, grad_f=grad_gradScale, grad_input_indices=[0], grad_output_indices=[0])([blob_in,label_blob], [blob_out], name=name)
+        output = self.net.Python(f=gradScale, grad_f=grad_gradScale, grad_input_indices=[0], grad_output_indices=[0])([blob_in,label_blob,'label_mask'], [blob_out], name=name)
 
         return output
         
@@ -521,8 +514,7 @@ class DetectionModelHelper(cnn.CNNModelHelper):
         output = self.net.Python(f=gradScale, grad_f=grad_gradScale, grad_input_indices=[0], grad_output_indices=[0])([blob_in], [blob_out], name=name)
 
         return output
-    
-    
+        
     def BilinearInterpolation(
         self, blob_in, blob_out, dim_in, dim_out, up_scale
     ):

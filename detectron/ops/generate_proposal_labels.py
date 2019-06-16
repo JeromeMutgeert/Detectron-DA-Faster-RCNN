@@ -66,6 +66,6 @@ class GenerateProposalLabelsOp(object):
         if 'pada_roi_weights' in blobs:
             fading = self.model.da_fade_in.get_weight()
             blobs['avg_pada_weight'] = self.model.class_weight_db.avg_pada_weight ** fading
-            
+
         for i, k in enumerate(output_blob_names):
             blob_utils.py_op_copy_blob(blobs[k], outputs[i])
