@@ -155,7 +155,8 @@ def train_model():
             print_conf_matrix(model.class_weight_db.conf_matrix)
             pool2 = workspace.FetchBlob('gpu_0/pool2').astype(float)
             print('pool2 max: {}'.format(pool2.max()))
-            blob_summary(['conv3_1_w','conv3_1_w_grad','conv3_1_b','conv5_3','da_fc7','da_conv_2','dc_ip3','dc_ip3_w','dc_ip2_w_grad'])
+            # blob_summary(['conv3_1_w','conv3_1_w_grad','conv3_1_b','conv5_3','da_fc7','da_conv_2','dc_ip3','dc_ip3_w','dc_ip2_w_grad'])
+            blob_summary(['conv3_1_w','conv3_1_w_grad','conv3_1_b','da_conv_2','dc_ip3','dc_ip3_w','dc_ip2_w_grad']) # light
         
         
         if cfg.INTERRUPTING and time.time() - start_time > cfg.THRESH_TIME:

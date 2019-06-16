@@ -410,18 +410,23 @@ class DetectionModelHelper(cnn.CNNModelHelper):
         return output
     
     
-    def GradientScalerLayer(self, blob_in, blob_out, scale):
+    def GradientScalerLayer(self, blob_in, blob_out, scale,inc_avg_pada_weight=False):
         def gradScale(inputs, outputs):
             outputs[0].feed(inputs[0].data)
         def grad_gradScale(inputs, outputs):
             grad_output = inputs[-1]
             outputs[0].reshape(grad_output.shape)
             outputs[0].data[...] = scale*grad_output.data
-        if cfg.TRAIN.DA_FADE_IN:
+        if cfg.TRAIN.DA_FADE_IN or inc_avg_pada_weight:
             def grad_gradScale_fade(inputs, outputs):
                 grad_output = inputs[-1]
+                s = scale
+                if cfg.TRAIN.DA_FADE_IN:
+                    s *= self.da_fade_in.get_weight()
+                if inc_avg_pada_weight:
+                    s *= self.class_weight_db.avg_pada_weight
                 outputs[0].reshape(grad_output.shape)
-                outputs[0].data[...] = self.da_fade_in.get_weight()*scale*grad_output.data
+                outputs[0].data[...] = s * grad_output.data
             grad_gradScale = grad_gradScale_fade
             
         name = 'GradientScalerLayer:' + ','.join(

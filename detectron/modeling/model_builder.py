@@ -387,15 +387,15 @@ def _add_image_level_classifier(model, blob_in, dim_in, spatial_scale_in):
     from detectron.utils.c2 import const_fill
     from detectron.utils.c2 import gauss_fill
     
-    def negateGrad(inputs, outputs):
-        outputs[0].feed(inputs[0].data)
-    def grad_negateGrad(inputs, outputs):
-        scale = cfg.TRAIN.DA_IMG_GRL_WEIGHT
-        grad_output = inputs[-1]
-        outputs[0].reshape(grad_output.shape)
-        outputs[0].data[...] = -1.0*scale*grad_output.data
+    # def negateGrad(inputs, outputs):
+    #     outputs[0].feed(inputs[0].data)
+    # def grad_negateGrad(inputs, outputs):
+    #     scale = cfg.TRAIN.DA_IMG_GRL_WEIGHT
+    #     grad_output = inputs[-1]
+    #     outputs[0].reshape(grad_output.shape)
+    #     outputs[0].data[...] = -1.0*scale*grad_output.data
     
-    model.GradientScalerLayer([blob_in], ['da_grl'], -1.0*cfg.TRAIN.DA_IMG_GRL_WEIGHT)
+    model.GradientScalerLayer([blob_in], ['da_grl'], -1.0*cfg.TRAIN.DA_IMG_GRL_WEIGHT,inc_avg_pada_weight=True)
     model.Conv('da_grl', 'da_conv_1', dim_in, 512, kernel=1, pad=0, stride=1, weight_init=gauss_fill(0.001), bias_init=const_fill(0.0))    
     model.Relu('da_conv_1', 'da_conv_1')
     model.Conv('da_conv_1', 'da_conv_2',

@@ -115,6 +115,7 @@ def get_fast_rcnn_blob_names(is_training=True):
         if cfg.TRAIN.PADA:
             blob_names += ['pada_roi_weights']
             blob_names += ['da_dc_mask']
+            blob_names += ['avg_pada_weight']
         
     return blob_names
 

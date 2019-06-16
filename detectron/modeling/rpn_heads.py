@@ -140,12 +140,22 @@ def add_single_scale_rpn_losses(model):
             model.net.SpatialNarrowAs(
                 ['source_' + 'rpn_bbox_' + key + '_wide', 'source_' + 'rpn_bbox_pred'], 'source_' + 'rpn_bbox_' + key
             )
-
-        loss_rpn_cls = model.net.SigmoidCrossEntropyLoss(
-            ['source_rpn_cls_logits', 'source_rpn_labels_int32'],
-            'loss_rpn_cls',
-            scale=model.GetLossScale()
-        )
+        
+        if cfg.TRAIN.PADA:
+            model.net.Mul(['source_rpn_bbox_outside_weights','avg_pada_weight'],['source_rpn_bbox_outside_weights'],broadcast=1)
+            model.PadaGradScale('source_rpn_cls_logits','pada_rpn_cls_logits')
+        
+            loss_rpn_cls = model.net.SigmoidCrossEntropyLoss(
+                ['pada_rpn_cls_logits', 'source_rpn_labels_int32'],
+                'loss_rpn_cls',
+                scale=model.GetLossScale()
+            )
+        else:
+            loss_rpn_cls = model.net.SigmoidCrossEntropyLoss(
+                ['source_rpn_cls_logits', 'source_rpn_labels_int32'],
+                'loss_rpn_cls',
+                scale=model.GetLossScale()
+            )
         loss_rpn_bbox = model.net.SmoothL1Loss(
             [
                 'source_rpn_bbox_pred', 'source_rpn_bbox_targets', 'source_rpn_bbox_inside_weights',
