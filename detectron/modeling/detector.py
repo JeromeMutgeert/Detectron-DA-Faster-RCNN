@@ -453,8 +453,9 @@ class DetectionModelHelper(cnn.CNNModelHelper):
             class_weights = self.class_weight_db.class_weights
             bg_weight = self.class_weight_db.get_avg_pada_weight()
             class_weights[0] = bg_weight
-            fading = self.da_fade_in.get_weight()
-            class_weights = class_weights ** fading
+            if cfg.TRAIN.DA_FADE_IN:
+                fading = self.da_fade_in.get_weight()
+                class_weights = class_weights ** fading
             
             # correct for large instance gradients due to loss-averaging in small batches (rpn does not always predict many)
             class_weights *= len(labels) / cfg.TRAIN.BATCH_SIZE_PER_IM
@@ -510,6 +511,9 @@ class DetectionModelHelper(cnn.CNNModelHelper):
             #     weighting = weighting[...,None] # add dim for each non-batch dimension.
             
             weight = self.class_weight_db.avg_pada_weight
+            
+            if cfg.TRAIN.DA_FADE_IN:
+                weight **= self.da_fade_in.get_weight()
             
             outputs[0].reshape(grad_output.shape)
             outputs[0].data[...] = weight*grad_output.data
