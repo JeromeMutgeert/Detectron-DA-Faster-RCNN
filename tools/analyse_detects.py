@@ -110,7 +110,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def plt_bars(counts,labels,counts2=None,reversed=True,ax=None,eps=np.finfo(float).eps,figsize=(30,20),log=None,**kwargs):
+def plt_bars(counts,labels,counts2=None,reversed=True,ax=None,eps=np.finfo(float).eps,figsize=(13,7),log=None,**kwargs):
     if ax is None:
         fig,ax = plt.subplots(figsize=figsize)
     order = counts.argsort()
@@ -125,13 +125,15 @@ def plt_bars(counts,labels,counts2=None,reversed=True,ax=None,eps=np.finfo(float
     if counts2 is not None:
         ax.bar(x,counts2[order],alpha=.4,**kwargs)
     plt.xticks(x,labels[order],rotation=90)
+    plt.ylabel('Probability')
     if log:
         ax.set_yscale('log')
+    fig.subplots_adjust(bottom=.23)
     
 coco_classes = np.array(get_coco_dataset().classes.values(),dtype=str)
 def plot_dists(coco_dist, yisual_dist, source_name,target_name):
     plt_bars(coco_dist,coco_classes,yisual_dist)
-    plt.title('Class distributions of detections: KL( {} || {} ) = {} )'.format(target_name,source_name,KL_div(yisual_dist,coco_dist)))
+    plt.title('Class distributions of detections: KL( {} || {} ) = {:.4f}'.format(target_name,source_name,KL_div(yisual_dist,coco_dist)))
     plt.legend([source_name,target_name])
     plt.show()
 
@@ -210,15 +212,15 @@ if __name__ == '__main__':
     
     sets = [(coco_wts,'coco'), (voc_wts, 'voc'), (yisual_wts, 'yisual')]
     pairs = [(sets[0],sets[1]),(sets[0],sets[2]),(sets[1],sets[2])]
-    # for set1,set2 in pairs:
-    #     for s1,s2 in [(set1,set2),(set2,set1)]:
-    #         wts_source,source_name = s1
-    #         wts_target,target_name = s2
-    #         dist_source, dist_target = get_dist(wts_source), get_dist(wts_target)
-    #
-    #         kl_div = KL_div(dist_target,dist_source)
-    #         print("KL({}||{}) = {}".format(target_name,source_name,kl_div))
-    #         # plot_dists(dist_source,dist_target,source_name,target_name)
+    for set1,set2 in pairs:
+        for s1,s2 in [(set1,set2),(set2,set1)]:
+            wts_source,source_name = s1
+            wts_target,target_name = s2
+            dist_source, dist_target = get_dist(wts_source), get_dist(wts_target)
+
+            kl_div = KL_div(dist_target,dist_source)
+            print("KL({}||{}) = {}".format(target_name,source_name,kl_div))
+            plot_dists(dist_source,dist_target,source_name,target_name)
     
     # source_dist = get_dist(source_wts)
     #
@@ -261,7 +263,7 @@ if __name__ == '__main__':
     # normalise per-image:
     im_weights = voc_wts.sum(axis=1)
     total_weight = im_weights.sum()
-    min_weight = .05 * total_weight
+    min_weight = .55 * total_weight
     im_dists = voc_wts / im_weights[:, None]
     
     # scores = [ KL_div(yisual_dist,im_dist) - KL_div(im_dist,coco_dist) for im_dist in im_dists] #

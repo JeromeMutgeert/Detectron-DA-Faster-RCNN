@@ -22,7 +22,6 @@ class ClassWeightDB(object):
         self.total_sum_softmax = None
         self.class_weights = None
         self.gt_ins_dist = None
-        self.wap = 0
         self.starting_dist = None
         self.avg_pada_weight = 0
         # self.prepared = False
@@ -45,7 +44,6 @@ class ClassWeightDB(object):
         n_instances = gt_ins_counts.sum()
         self.gt_ins_dist = gt_ins_counts/float(n_instances) + np.finfo(float).eps
         print_dist(self.gt_ins_dist,'gt_ins_dist')
-        self.wap = (self.gt_ins_dist**2).sum() #weighted average prob.
         
         if not continuing:
             self.weight_db = np.concatenate([rois['sum_softmax'][None,:] for rois in target_roidb],axis=0)
@@ -76,7 +74,7 @@ class ClassWeightDB(object):
         if self.conf_matrix is None:
             self.conf_matrix = np.eye(nclasses)
         ns = [1000] * nclasses if self.conf_col_avgs is None else self.conf_col_avgs
-        self.conf_col_avgs = [(c,RollingAvg(5000, avg_init=self.conf_matrix[:, c], n_init=ns[c])) for c in range(nclasses)]
+        self.conf_col_avgs = [(c,RollingAvg(2000, avg_init=self.conf_matrix[:, c], n_init=ns[c])) for c in range(nclasses)]
         
         # if self.fg_acc is None:
         self.fg_acc = RollingAvg(10000,*self.fg_acc)
@@ -89,7 +87,7 @@ class ClassWeightDB(object):
         # map the sum_softmax'es to the expected gt space:
         gt_sum_softmax = np.matmul(self.conf_matrix,self.total_sum_softmax[:,None])[:,0]
         gt_sum_softmax[0] = 0.0
-        self.class_weights = gt_sum_softmax / self.gt_ins_dist
+        self.class_weights =  gt_sum_softmax / self.gt_ins_dist
         self.class_weights /= self.class_weights.max()
         self.avg_pada_weight = (self.class_weights * self.gt_ins_dist).sum()
         
@@ -106,6 +104,7 @@ class ClassWeightDB(object):
         # self.prepared = False
         
         nrois, nclasses = probs.shape
+        
         
         # if len(self.maxes) > nrois:
         #     maxes = self.maxes[:nrois]
@@ -127,23 +126,16 @@ class ClassWeightDB(object):
         
         pij = np.matmul(one_hot_labels,probs)
         total_weights = pij.sum(axis=0)
-        total_weights[total_weights == 0.0] = -1
+        zeroed_cls = np.where(total_weights == 0.0)
+        total_weights[zeroed_cls] = -1
+        pij /= total_weights[None,:] # normalisation such that pij[i,j] = P(gt=i|pred=j)
         
-        # if False:
-        dist = self.gt_ins_dist
-        dist[0] = self.wap #weighted avg prob
-        pij /= dist[:,None] # correct for source dist bias. We do not let this correction influence the number of detections in total_weight.
-        totals = pij.sum(axis=0)
-        totals[totals == 0.0] = -1
-        pij /= totals[None,:] # normalisation such that pij[i,j] = P(gt=i|pred=j)
-        # else:
-        #     pij /= total_weights[None,:] # normalisation such that pij[i,j] = P(gt=i|pred=j)
         
         for (c,col),w in zip(self.conf_col_avgs,total_weights):
             if w > 0:
                 self.conf_matrix[:,c] = col.update_and_get(pij[:,c],weight=w)
         
-        sel = labels > 0  # fg classes.
+        sel = labels > 0  # only confuse fg classes.
         # maxes  =  maxes[sel]
         probs  =  probs[sel,:]
         labels = labels[sel]
@@ -154,6 +146,13 @@ class ClassWeightDB(object):
         # print('Foreground accuracy: {} ({}/{})'.format(fg_accuracy,correct,len(labels)))
         self.fg_acc.update_and_get(fg_accuracy,len(labels))
         
+        
+        
+        
+    
+    # def update_get_avg_pada_weight(self,observed_fg_weight,count=1):
+    #     return self.avg_pada_weight
+    #     # return self.avg_pada_stats.update_and_get(observed_fg_weight,weight=count)
     
     def get_avg_pada_weight(self):
         return self.avg_pada_weight
@@ -196,11 +195,8 @@ class RollingAvg(object):
             self.n = self.max_n
             weight = weight - diff
         if self.n >= self.max_n:
-            # self.sum = self.sum * (self.n - weight) / self.n + sample * weight
-            self.avg = (self.sum + sample * weight) / (self.n + weight)
-            self.sum = self.avg * self.n
-        else:
-            self.avg = self.sum / self.n
+            self.sum = self.sum * (self.n - weight) / self.n + sample * weight
+        self.avg = self.sum / self.n
         return self.avg
     
     def get(self):

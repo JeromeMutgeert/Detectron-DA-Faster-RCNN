@@ -90,6 +90,7 @@ def initialize_gpu_from_weights_file(model, weights_file, gpu_id=0):
                 continue
             dst_name = core.ScopedName(unscoped_param_name)
             has_momentum = src_name + '_momentum' in src_blobs
+            has_momentum = False
             has_momentum_str = ' [+ momentum]' if has_momentum else ''
             logger.info(
                 '{:s}{:} loaded from weights file into {:s}: {}'.format(
@@ -132,6 +133,7 @@ def initialize_gpu_from_weights_file(model, weights_file, gpu_id=0):
             del src_blobs['weight_db']
     elif 'weight_db' in src_blobs:
         del src_blobs['weight_db']
+    
     
     # We preserve blobs that are in the weights file but not used by the current
     # model. We load these into CPU memory under the '__preserve__/' namescope.

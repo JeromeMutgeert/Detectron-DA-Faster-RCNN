@@ -281,8 +281,6 @@ class RoIDataLoader(object):
             logger.info('roidb perm state loaded')
         else:
             logger.info('roidb state not loaded, different size train set.')
-        
-        
     
     def get_output_names(self):
         return self._output_names

@@ -357,7 +357,7 @@ def add_proposals(roidb, rois, scales, crowd_thresh,model=None):
     _add_class_assignments(roidb)
 
 
-def _merge_proposal_boxes_into_roidb(roidb, box_list, model=None):
+def _merge_proposal_boxes_into_roidb(roidb, box_list,model=None):
     """Add proposal boxes to each roidb entry."""
     assert len(box_list) == len(roidb)
     for i, entry in enumerate(roidb):
@@ -366,9 +366,8 @@ def _merge_proposal_boxes_into_roidb(roidb, box_list, model=None):
         
         if cfg.TRAIN.DOMAIN_ADAPTATION:
             rois_per_image = min(len(boxes), int(cfg.TRAIN.BATCH_SIZE_PER_IM))
-            entry['rpn_boxes'] = len(boxes) # so we kno later how many boxes come from rpn.
+            entry['da_boxes'] = np.array(boxes[:rois_per_image],dtype=np.float32)
             if not entry['is_source']:
-                entry['boxes'] = np.array(boxes[:rois_per_image],dtype=np.float32)
                 weight = model.class_weight_db.get_avg_pada_weight()
                 ims = cfg.TRAIN.IMS_PER_BATCH
                 source_imgs = ims-ims//2; target_imgs = ims//2

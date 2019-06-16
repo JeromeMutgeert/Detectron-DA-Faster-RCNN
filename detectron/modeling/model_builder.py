@@ -204,7 +204,7 @@ def build_generic_detection_model(
 
         if not cfg.MODEL.RPN_ONLY:
             # Add the Fast R-CNN head
-            head_loss_gradients['box'], blob_frcnn, dim_frcnn = _add_fast_rcnn_head(
+            head_loss_gradients['box'] = _add_fast_rcnn_head(
                 model, add_roi_box_head_func, blob_conv, dim_conv,
                 spatial_scale_conv
             )
@@ -227,15 +227,12 @@ def build_generic_detection_model(
             # Add Image-level loss
             head_loss_gradients['image'] = _add_image_level_classifier(model, blob_conv, dim_conv, spatial_scale_conv)
             # Add Instance-level loss
-            # head_loss_gradients['instance'], blob_feats_rois_all, dim_feats_rois_all = _add_instance_level_classifier(model, blob_conv, dim_conv, spatial_scale_conv)
-            head_loss_gradients['instance'], blob_feats_rois_all, dim_feats_rois_all = _add_instance_level_classifier(model, blob_frcnn, dim_frcnn)
+            head_loss_gradients['instance'], blob_feats_rois_all, dim_feats_rois_all = _add_instance_level_classifier(model, blob_conv, dim_conv, spatial_scale_conv)
             # Add consistency regularization
             # head_loss_gradients['consistency'] = _add_consistency_loss(model, blob_conv, dim_conv, blob_feats_rois_all, dim_feats_rois_all)
-            #
-            if cfg.TRAIN.PADA:
-                _add_pada_frcnn_head(model,blob_frcnn,dim_frcnn)
             
-            # model.net.Gather(['cls_score','test_indices'],['score_select'])
+            if cfg.TRAIN.PADA:
+                _add_pada_frcnn_head(model,blob_feats_rois_all,dim_feats_rois_all)
 
         if model.train:
             loss_gradients = {}
@@ -253,22 +250,19 @@ def build_generic_detection_model(
 def _add_pada_frcnn_head(model, blob_in, dim):
     """Add RoI classification and bounding box regression output ops."""
     
-    # # take targets only
-    # def mask(inputs, outputs):
-    #     scores = inputs[0].data
-    #     label_mask = inputs[1].data.astype(bool)
-    #     scores = scores[~label_mask, :] # selecting targets
-    #     outputs[0].reshape(scores.shape)
-    #     outputs[0].data[...] = scores
-    # name = 'MaskingInput_selecting_targets'
-    # blob_in = model.net.Python(f=mask)([blob_in,'da_dc_mask'], ['da_fc7_target'], name=name)
-    
-    
-    blob_in = model.net.Slice([blob_in,'eval_start','eval_end'],'target_feats')
+    # take targets only
+    def mask(inputs, outputs):
+        scores = inputs[0].data
+        label_mask = inputs[1].data.astype(bool)
+        scores = scores[~label_mask, :] # selecting targets
+        outputs[0].reshape(scores.shape)
+        outputs[0].data[...] = scores
+    name = 'MaskingInput_selecting_targets'
+    blob_in = model.net.Python(f=mask)([blob_in,'da_dc_mask'], ['da_fc7_target'], name=name)
     
     # Box classification layer
     model.FCShared(
-        'target_feats',
+        blob_in,
         'pada_cls',
         dim,
         model.num_classes,
@@ -276,40 +270,39 @@ def _add_pada_frcnn_head(model, blob_in, dim):
         bias='cls_score_b'
     )
     # always softmax, we collect these predictions.
-    model.Softmax('pada_cls', 'eval_cls_pred', engine='CUDNN')
+    model.Softmax('pada_cls', 'pada_cls_pred', engine='CUDNN')
     # Box regression layer
     num_bbox_reg_classes = (
         2 if cfg.MODEL.CLS_AGNOSTIC_BBOX_REG else model.num_classes
     )
     model.FCShared(
         blob_in,
-        'eval_bbox_pred',
+        'pada_bbox_pred',
         dim,
         num_bbox_reg_classes * 4,
         weight='bbox_pred_w',
         bias='bbox_pred_b'
     )
-    
-    import numpy as np
-    import detectron.utils.boxes as box_utils
-    
-    def update_target_class_weights(inputs,outputs):
+    def get_target_class_weights(inputs,outputs):
+        
+        # 'rois', 'label_mask', 'im_info', 'is_source', 'cls_pred', 'bbox_pred'
+        
+        import numpy as np
+        import detectron.utils.boxes as box_utils
         
         rois =  inputs[0].data
-        eval_start = inputs[1].data
-        eval_end = inputs[2].data
-        im_info = inputs[3].data
+        dc_mask = inputs[1].data.astype(bool)
+        im_info = inputs[2].data
+        is_source = inputs[3].data.astype(bool)
         cls_pred = inputs[4].data
         bbox_pred = inputs[5].data
         
-        rois = rois[eval_start[0]:eval_end[0]] #duplicate SliceOp but now on 'rois'
-        target_im = int(rois[0,0]) #get batch idx from first roi.
-        
-        this_im_info = im_info[target_im,:]
+        this_im_info = im_info[~is_source,:][0,:]
         im_shape = this_im_info[:2]
         im_scale = this_im_info[2]
         im_idx = int(this_im_info[3]) # im_info is extended with its index in the roidb.
         
+        rois = rois[~dc_mask,:]
         boxes = rois[:, 1:5] / im_scale
         
         box_deltas = bbox_pred
@@ -384,24 +377,25 @@ def _add_pada_frcnn_head(model, blob_in, dim):
         # # return statement:
         # outputs[0].reshape(sum_softmax.shape)
         # outputs[0].data[...] = sum_softmax
-    
-    model.net.Python(f=update_target_class_weights)(
-        ['rois', 'eval_start','eval_end', 'im_info', 'eval_cls_pred', 'eval_bbox_pred'],
-        [], name='update_target_class_weights')
+        
+        
+    model.net.Python(f=get_target_class_weights)(
+        ['da_rois', 'da_dc_mask', 'im_info', 'is_source', 'pada_cls_pred', 'pada_bbox_pred'],
+        [], name='get_target_class_weights')
 
 def _add_image_level_classifier(model, blob_in, dim_in, spatial_scale_in):
     from detectron.utils.c2 import const_fill
     from detectron.utils.c2 import gauss_fill
     
-    # def negateGrad(inputs, outputs):
-    #     outputs[0].feed(inputs[0].data)
-    # def grad_negateGrad(inputs, outputs):
-    #     scale = cfg.TRAIN.DA_IMG_GRL_WEIGHT
-    #     grad_output = inputs[-1]
-    #     outputs[0].reshape(grad_output.shape)
-    #     outputs[0].data[...] = -1.0*scale*grad_output.data
+    def negateGrad(inputs, outputs):
+        outputs[0].feed(inputs[0].data)
+    def grad_negateGrad(inputs, outputs):
+        scale = cfg.TRAIN.DA_IMG_GRL_WEIGHT
+        grad_output = inputs[-1]
+        outputs[0].reshape(grad_output.shape)
+        outputs[0].data[...] = -1.0*scale*grad_output.data
     
-    model.GradientScalerLayer([blob_in], ['da_grl'], -1.0*cfg.TRAIN.DA_IMG_GRL_WEIGHT,inc_avg_pada_weight=True)
+    model.GradientScalerLayer([blob_in], ['da_grl'], -1.0*cfg.TRAIN.DA_IMG_GRL_WEIGHT)
     model.Conv('da_grl', 'da_conv_1', dim_in, 512, kernel=1, pad=0, stride=1, weight_init=gauss_fill(0.001), bias_init=const_fill(0.0))    
     model.Relu('da_conv_1', 'da_conv_1')
     model.Conv('da_conv_1', 'da_conv_2',
@@ -428,7 +422,7 @@ def _add_image_level_classifier(model, blob_in, dim_in, spatial_scale_in):
     else:
         return None
 
-def _add_instance_level_classifier(model, blob_in, dim_in):
+def _add_instance_level_classifier(model, blob_in, dim_in, spatial_scale):
     from detectron.utils.c2 import const_fill
     from detectron.utils.c2 import gauss_fill
 
@@ -439,25 +433,23 @@ def _add_instance_level_classifier(model, blob_in, dim_in):
     #     grad_output = inputs[-1]
     #     outputs[0].reshape(grad_output.shape)
     #     outputs[0].data[...] = -1.0*scale*grad_output.data
-    # model.RoIFeatureTransform(
-    #     blob_in,
-    #     'da_pool5',
-    #     blob_rois='da_rois',
-    #     method=cfg.FAST_RCNN.ROI_XFORM_METHOD,
-    #     resolution=7,
-    #     sampling_ratio=cfg.FAST_RCNN.ROI_XFORM_SAMPLING_RATIO,
-    #     spatial_scale=spatial_scale
-    # )
-    # model.FCShared('da_pool5', 'da_fc6', dim_in * 7 * 7, 4096,
-    #     weight='fc6_w', bias='fc6_b')
-    # model.Relu('da_fc6', 'da_fc6')
-    # model.FCShared('da_fc6', 'da_fc7', 4096, 4096,
-    #     weight='fc7_w', bias='fc7_b')
-    # da_blobs = model.Relu('da_fc7', 'da_fc7')
-    da_blob = 'da_features'
-    da_blob = model.net.Slice([blob_in,'da_start','da_end'],da_blob)
-    model.GradientScalerLayer([da_blob], ['dc_grl'], -1.0*cfg.TRAIN.DA_INS_GRL_WEIGHT)
-    model.FC('dc_grl', 'dc_ip1', dim_in, 1024,
+    model.RoIFeatureTransform(
+        blob_in,
+        'da_pool5',
+        blob_rois='da_rois',
+        method=cfg.FAST_RCNN.ROI_XFORM_METHOD,
+        resolution=7,
+        sampling_ratio=cfg.FAST_RCNN.ROI_XFORM_SAMPLING_RATIO,
+        spatial_scale=spatial_scale
+    )
+    model.FCShared('da_pool5', 'da_fc6', dim_in * 7 * 7, 4096, 
+        weight='fc6_w', bias='fc6_b')
+    model.Relu('da_fc6', 'da_fc6')
+    model.FCShared('da_fc6', 'da_fc7', 4096, 4096,
+        weight='fc7_w', bias='fc7_b')
+    da_blobs = model.Relu('da_fc7', 'da_fc7')
+    model.GradientScalerLayer([da_blobs], ['dc_grl'], -1.0*cfg.TRAIN.DA_INS_GRL_WEIGHT)
+    model.FC('dc_grl', 'dc_ip1', 4096, 1024,
              weight_init=gauss_fill(0.01), bias_init=const_fill(0.0))
     model.Relu('dc_ip1', 'dc_relu_1')
     model.Dropout('dc_relu_1', 'dc_drop_1', ratio=0.5, is_test=False)
@@ -482,7 +474,7 @@ def _add_instance_level_classifier(model, blob_in, dim_in):
         )
         loss_gradient = blob_utils.get_loss_gradients(model, [dc_loss])
         model.AddLosses('loss_dc')
-    return loss_gradient, da_blob, 4096
+    return loss_gradient, da_blobs, 4096
 
 
 def _add_consistency_loss(model, blob_img_in, img_dim_in, blob_ins_in, ins_dim_in):
@@ -601,7 +593,7 @@ def _add_fast_rcnn_head(
         loss_gradients = fast_rcnn_heads.add_fast_rcnn_losses(model)
     else:
         loss_gradients = None
-    return loss_gradients, blob_frcn, dim_frcn
+    return loss_gradients
 
 
 def _add_roi_mask_head(
