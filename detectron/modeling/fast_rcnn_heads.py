@@ -46,8 +46,7 @@ import detectron.utils.blob as blob_utils
 def add_fast_rcnn_outputs(model, blob_in, dim):
     """Add RoI classification and bounding box regression output ops."""
     
-    if cfg.TRAIN.DOMAIN_ADAPTATION:
-        blob_in = model.net.Slice([blob_in,'sup_start','sup_end'],'sup_source_feats')
+    blob_in = model.net.Slice([blob_in,'sup_start','sup_end'],'sup_source_feats')
     
     # Box classification layer
     model.FC(
