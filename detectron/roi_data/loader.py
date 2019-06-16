@@ -267,14 +267,20 @@ class RoIDataLoader(object):
         order = state['roidb_order'] if type(state) == type(dict()) else state
         cur = order[0]
         perm = order[1:]
-        with self._lock:
-            self._minibatch_queue.empty()
-            self._perm = deque(perm)
-            self._cur = cur
-            if self._target_roidb is not None and type(state) == type(dict()) and 'target_roidb_order' in state:
-                order = state['target_roidb_order']
-                self._target_cur = order[0]
-                self._target_perm = deque(order[1:])
+        
+        if len(perm) == len(list(self._perm)):
+            with self._lock:
+                self._minibatch_queue.empty()
+                self._perm = deque(perm)
+                self._cur = cur
+                if self._target_roidb is not None and type(state) == type(dict()) and 'target_roidb_order' in state:
+                    order = state['target_roidb_order']
+                    self._target_cur = order[0]
+                    self._target_perm = deque(order[1:])
+                    logger.info('roidb target perm state loaded')
+            logger.info('roidb perm state loaded')
+        else:
+            logger.info('roidb state not loaded, different size train set.')
     
     def get_output_names(self):
         return self._output_names

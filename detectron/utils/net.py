@@ -90,6 +90,7 @@ def initialize_gpu_from_weights_file(model, weights_file, gpu_id=0):
                 continue
             dst_name = core.ScopedName(unscoped_param_name)
             has_momentum = src_name + '_momentum' in src_blobs
+            has_momentum = False
             has_momentum_str = ' [+ momentum]' if has_momentum else ''
             logger.info(
                 '{:s}{:} loaded from weights file into {:s}: {}'.format(
@@ -118,22 +119,21 @@ def initialize_gpu_from_weights_file(model, weights_file, gpu_id=0):
 
     # let roidb continue with the data that is not seen yet.
     if 'roidb_state' in src_blobs and model.roi_data_loader is not None:
-        loaded_perm = src_blobs['roidb_state']
-        current_perm = model.roi_data_loader._perm
-        if len(loaded_perm) == len(current_perm):
-            model.roi_data_loader.set_perm_state(loaded_perm)
-            logger.info('roidb perm state loaded')
-        else:
-            logger.info('roidb state not loaded, different size train set.')
+        model.roi_data_loader.set_perm_state(src_blobs['roidb_state'])
         del src_blobs['roidb_state']
     else:
         logger.info("roidb state not loaded")
+    if 'roidb_state' in src_blobs and model.roi_data_loader is None:
+        del src_blobs['roidb_state']
     
     if cfg.TRAIN.PADA:
         if 'weight_db' in src_blobs:
             import detectron.modeling.PADA as pada
             model.class_weight_db = pada.ClassWeightDB(*src_blobs['weight_db'])
             del src_blobs['weight_db']
+    elif 'weight_db' in src_blobs:
+        del src_blobs['weight_db']
+    
     
     # We preserve blobs that are in the weights file but not used by the current
     # model. We load these into CPU memory under the '__preserve__/' namescope.
