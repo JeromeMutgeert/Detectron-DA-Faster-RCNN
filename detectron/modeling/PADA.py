@@ -130,15 +130,15 @@ class ClassWeightDB(object):
         total_weights[total_weights == 0.0] = -1
         
         # if False:
-        dist = self.gt_ins_dist
-        dist[0] = self.wap #weighted avg prob
-        pij /= dist[:,None] # correct for source dist bias. We do not let this correction influence the number of detections in total_weight.
-        totals = pij.sum(axis=0)
-        totals[totals == 0.0] = -1
-        pij /= totals[None,:] # normalisation such that pij[i,j] = P(gt=i|pred=j)
+        # dist = self.gt_ins_dist
+        # dist[0] = self.wap #weighted avg prob
+        # pij /= dist[:,None] # correct for source dist bias. We do not let this correction influence the number of detections in total_weight.
+        # totals = pij.sum(axis=0)
+        # totals[totals == 0.0] = -1
+        # pij /= totals[None,:] # normalisation such that pij[i,j] = P(gt=i|pred=j)
         # else:
-        #     pij /= total_weights[None,:] # normalisation such that pij[i,j] = P(gt=i|pred=j)
-        
+        pij /= total_weights[None,:] # normalisation such that pij[i,j] = P(gt=i|pred=j)
+    
         for (c,col),w in zip(self.conf_col_avgs,total_weights):
             if w > 0:
                 self.conf_matrix[:,c] = col.update_and_get(pij[:,c],weight=w)

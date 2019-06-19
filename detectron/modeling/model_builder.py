@@ -454,6 +454,7 @@ def _add_instance_level_classifier(model, blob_in, dim_in):
     # model.FCShared('da_fc6', 'da_fc7', 4096, 4096,
     #     weight='fc7_w', bias='fc7_b')
     # da_blobs = model.Relu('da_fc7', 'da_fc7')
+    blob_in = model.net.Alias(blob_in,'feats_copy_da')
     da_blob = 'da_features'
     da_blob = model.net.Slice([blob_in,'da_start','da_end'],da_blob)
     model.GradientScalerLayer([da_blob], ['dc_grl'], -1.0*cfg.TRAIN.DA_INS_GRL_WEIGHT)

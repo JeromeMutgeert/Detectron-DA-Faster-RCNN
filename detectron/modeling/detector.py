@@ -79,7 +79,7 @@ class DetectionModelHelper(cnn.CNNModelHelper):
                  str(p).find('gpu_{}'.format(gpu_id)) == 0)
             )]
 
-    def AffineChannel(self, blob_in, blob_out, dim, inplace=False):
+    def AffineChannel(self, blob_in, blob_out, dim, inplace=False,is_learnable=False):
         """Affine transformation to replace BN in networks where BN cannot be
         used (e.g., because the minibatch size is too small).
 
@@ -101,9 +101,9 @@ class DetectionModelHelper(cnn.CNNModelHelper):
             shape=[dim, ],
         )
         if inplace:
-            return self.net.AffineChannel([blob_in, scale, bias], blob_in)
+            return self.net.AffineChannel([blob_in, scale, bias], blob_in, is_learnable=is_learnable)
         else:
-            return self.net.AffineChannel([blob_in, scale, bias], blob_out)
+            return self.net.AffineChannel([blob_in, scale, bias], blob_out, is_learnable=is_learnable)
 
     def GenerateProposals(self, blobs_in, blobs_out, anchors, spatial_scale):
         """Op for generating RPN porposals.

@@ -47,6 +47,7 @@ def add_fast_rcnn_outputs(model, blob_in, dim):
     """Add RoI classification and bounding box regression output ops."""
     
     if cfg.TRAIN.DOMAIN_ADAPTATION:
+        blob_in = model.net.Copy(blob_in,'feats_copy_sup')
         blob_in = model.net.Slice([blob_in,'sup_start','sup_end'],'sup_source_feats')
     
     # Box classification layer
