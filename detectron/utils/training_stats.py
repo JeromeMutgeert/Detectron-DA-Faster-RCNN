@@ -40,7 +40,7 @@ class TrainingStats(object):
 
     def __init__(self, model):
         # Window size for smoothing tracked values (with median filtering)
-        self.WIN_SZ = 20
+        self.WIN_SZ = 1
         # Output logging period in SGD iterations
         self.LOG_PERIOD = 1
         self.smoothed_losses_and_metrics = {
