@@ -1,8 +1,3 @@
-# Default detectron lr schedule for coco:
-# lr: 0.00125 per image, divided by 10 after 0,96M and 1,28M images, finished after 1,44M images.
-# These images can be grouped in arbitrary batches, and because the loss is batch-averaged, the BASE_LR is set
-# to batch_size * 0.00125. Note that batch_size = TRAIN.IMS_PER_BATCH * NUM_GPUS.
-
 MODEL:
   TYPE: generalized_rcnn
   CONV_BODY: VGG16.add_VGG16_conv5_body
@@ -10,24 +5,33 @@ MODEL:
   FASTER_RCNN: True
 NUM_GPUS: 1
 SOLVER:
-  WEIGHT_DECAY: 0.0001
+  WEIGHT_DECAY: 0.0005
   LR_POLICY: steps_with_decay
-  BASE_LR: 0.008 # 0.002 per image instead of 0.00125
+  BASE_LR: 0.000075  # 0.000025 per source image and 0.00005 per target image instead of 0.00125
   GAMMA: 0.1
-  MAX_ITER: 180000 # half as long schedule.
-  STEPS: [0, 120000, 160000]
+  MAX_ITER: 100000 # finetune schedule, about 7% of a full training schedule on coco.
+  STEPS: [0, 67000]
 RPN:
   SIZES: (32, 64, 128, 256, 512)
 FAST_RCNN:
   ROI_BOX_HEAD: VGG16.add_VGG16_roi_fc_head
   ROI_XFORM_METHOD: RoIAlign
 TRAIN:
-  WEIGHTS: vgg16v2.pkl
-  DATASETS: ('coco_2017_train',)
+  DOMAIN_ADAPTATION: True
+  DA_IMG_GRL_WEIGHT: 0.2
+  DA_INS_GRL_WEIGHT: 0.2
+  PADA: True
+  DA_FADE_IN: True
+  DA_LR_MULT: 4 # 10 might be too much
+  INPUT_SCALE_LR_CORRECTION: True
+  WEIGHTS: frcnn_vgg16_coco.pkl #vgg16v2.pkl
+  SOURCE_DATASETS: ('coco_2017_train',)
+  TARGET_DATASETS: ('voc_2007_train','voc_2007_val','voc_2012_train') #subset of these, together 5392 imgs
   SCALES: (800,)
   MAX_SIZE: 1333
-  IMS_PER_BATCH: 4
-  BATCH_SIZE_PER_IM: 512
+  IMS_PER_BATCH: 3 # two source, one target.
+  BATCH_SIZE_PER_IM: 256
+  SNAPSHOT_ITERS: 10000000 #NEVER
 TEST:
   DATASETS: ('coco_2017_val',)
   SCALE: 800
@@ -38,7 +42,9 @@ TEST:
 OUTPUT_DIR: .
 
 INTERRUPTING: True
-#INPUT_NORMALIZER: 256.0 #128.0
+THRESH_TIME: 52949 # not 2 days minus 15 mins from config.py, but 80% of the time until expected to get critical.
+
+VOC_SUBSET: 'voc_subset.npy'  # 5392 imgs
 
 #MODEL:
 #  TYPE: generalized_rcnn

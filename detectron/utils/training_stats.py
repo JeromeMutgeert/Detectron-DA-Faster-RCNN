@@ -117,6 +117,7 @@ class TrainingStats(object):
             stats['total_detects'] = self.model.class_weight_db.total_sum_softmax.sum() / 2
             stats['KL_div'] = self.model.class_weight_db.get_KL_to_init()
             stats['accuracy_fg'] = self.model.class_weight_db.fg_acc.get()
+            stats['acc_fg_weighted'] = self.model.class_weight_db.weighted_fg_acc.get()
             
             target_dist = self.model.class_weight_db.get_dist()
             print('target_dist: {}'.format(list(target_dist)))

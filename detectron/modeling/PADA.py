@@ -17,7 +17,7 @@ def print_dist(dist,name):
 
 class ClassWeightDB(object):
     
-    def __init__(self,weight_db=None,conf_matrix=None,ns=None,fg_acc=(None,)):
+    def __init__(self,weight_db=None,conf_matrix=None,ns=None,fg_acc=(None,),weighted_fg_acc=(None,)):
         self.weight_db = weight_db
         self.total_sum_softmax = None
         self.class_weights = None
@@ -29,6 +29,7 @@ class ClassWeightDB(object):
         self.conf_matrix = conf_matrix
         self.conf_col_avgs = ns
         self.fg_acc = fg_acc
+        self.weighted_fg_acc = weighted_fg_acc
     
     def setup(self,roi_data_loader):
         source_roidb = roi_data_loader._roidb
@@ -67,9 +68,9 @@ class ClassWeightDB(object):
         
         avg_pada_weight = (self.class_weights * self.gt_ins_dist).sum()
         print("Weighted avg pada weight (by gt dist):", avg_pada_weight)
-        # self.avg_pada_stats = RollingAvg(n_instances,avg_resume=avg_pada_weight)
         self.avg_pada_weight = avg_pada_weight
         
+        # init confusion matrix
         nclasses = len(self.class_weights)
         if self.conf_matrix is None:
             self.conf_matrix = np.eye(nclasses)
@@ -78,59 +79,52 @@ class ClassWeightDB(object):
         
         # if self.fg_acc is None:
         self.fg_acc = RollingAvg(10000,*self.fg_acc)
+        self.weighted_fg_acc = RollingAvg(10000,*self.weighted_fg_acc)
+    
     
     def update_class_weights(self,im_idx,sum_softmax):
+        
+        # Update the weight_db, and apply the diff to the total_sum_softmax
         prev_sum_softmax = self.weight_db[im_idx].copy()
         self.weight_db[im_idx] = sum_softmax
         # print('NormalizedMeanSquaredUpdate:',((prev_sum_softmax - sum_softmax)**2).mean()/prev_sum_softmax.sum(),prev_sum_softmax.sum(),sum_softmax.sum(),im_idx)
         self.total_sum_softmax += sum_softmax - prev_sum_softmax
+        
         # map the sum_softmax'es to the expected gt space:
         gt_sum_softmax = np.matmul(self.conf_matrix,self.total_sum_softmax[:,None])[:,0]
-        gt_sum_softmax[0] = 0.0
+        gt_sum_softmax[0] = 0.0 # discard confusion with bg
+        
+        # correct for source gt dist and normalize (so that class_weights * gt_ins_dist \propto the target gt dist)
         self.class_weights =  gt_sum_softmax / self.gt_ins_dist
         self.class_weights /= self.class_weights.max()
+        
+        # update avg_pada_weight
         self.avg_pada_weight = (self.class_weights * self.gt_ins_dist).sum()
         
-        
-    # def set_maxes(self,maxes):
-    #     if self.prepared:
-    #         self.maxes = np.concatenate([self.maxes,maxes])
-    #     else:
-    #         self.maxes = maxes
-    #     self.prepared = True
     
     def update_confusion_matrix(self,probs,labels):
-        # assert self.prepared
-        # self.prepared = False
         
         nrois, nclasses = probs.shape
         
-        
-        # if len(self.maxes) > nrois:
-        #     maxes = self.maxes[:nrois]
-        #     self.maxes = self.maxes[nrois:]
-        #     self.prepared = True # remain prepared for other source imgs.
-        # else:
-        #     maxes = self.maxes
-        
-        sel = labels > -1
-        # maxes  =  maxes[sel]
+        sel = labels > -1 # labels of -1 are instances that are not supervised
         probs  =  probs[sel,:]
         labels = labels[sel]
         nrois = len(labels)
         
         one_hot_labels = np.zeros((nclasses,nrois),dtype=np.float32)
         one_hot_labels[labels,np.arange(nrois)] = 1.0 #maxes
-        
         # print(one_hot_labels.shape)
         
+        # compose the confusion matrix for the current predictions
         pij = np.matmul(one_hot_labels,probs)
+        
+        # normalize over first dim, so each column is a distribution.
         total_weights = pij.sum(axis=0)
         zeroed_cls = np.where(total_weights == 0.0)
         total_weights[zeroed_cls] = -1
         pij /= total_weights[None,:] # normalisation such that pij[i,j] = P(gt=i|pred=j)
         
-        
+        # update each column with
         for (c,col),w in zip(self.conf_col_avgs,total_weights):
             if w > 0:
                 self.conf_matrix[:,c] = col.update_and_get(pij[:,c],weight=w)
@@ -141,22 +135,21 @@ class ClassWeightDB(object):
         labels = labels[sel]
         # nrois = len(labels)
         
-        correct = (probs.argmax(axis=1) == labels).sum()
-        fg_accuracy = correct / float(len(labels))
+        corrects = probs.argmax(axis=1) == labels
+        fg_accuracy = corrects.sum() / float(len(labels))
         # print('Foreground accuracy: {} ({}/{})'.format(fg_accuracy,correct,len(labels)))
         self.fg_acc.update_and_get(fg_accuracy,len(labels))
         
+        weights = self.class_weights[labels]
+        wsum = weights.sum()
+        w_fg_accuracy = (corrects * weights).sum() / wsum
         
+        self.weighted_fg_acc.update_and_get(w_fg_accuracy,wsum)
         
+        print('fg instances: {} ({})'.format(len(labels),wsum))
         
-    
-    # def update_get_avg_pada_weight(self,observed_fg_weight,count=1):
-    #     return self.avg_pada_weight
-    #     # return self.avg_pada_stats.update_and_get(observed_fg_weight,weight=count)
-    
     def get_avg_pada_weight(self):
         return self.avg_pada_weight
-        # return self.avg_pada_stats.get()
     
     def get_dist(self):
         current_dist = self.class_weights * self.gt_ins_dist
@@ -167,7 +160,12 @@ class ClassWeightDB(object):
         return KL_div(self.get_dist(),self.starting_dist)
     
     def get_state(self):
-        return self.weight_db, self.conf_matrix, np.array([avg.n for _,avg in self.conf_col_avgs]),np.array([self.fg_acc.get(),self.fg_acc.n])
+        return \
+            self.weight_db, \
+            self.conf_matrix, \
+            np.array([avg.n for _,avg in self.conf_col_avgs]), \
+            np.array([self.fg_acc.get(), self.fg_acc.n]), \
+            np.array([self.weighted_fg_acc.get(), self.weighted_fg_acc.n])
         
         
 class RollingAvg(object):
@@ -222,3 +220,5 @@ class DAScaleFading(object):
         
     def get_weight(self):
         return self.weight
+    
+    
